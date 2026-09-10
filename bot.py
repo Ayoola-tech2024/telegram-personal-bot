@@ -96,12 +96,28 @@ Send any image, video, DOCX, or PDF file to convert format or extract audio/text
 
 PUBLIC_DASHBOARD_URL = "https://e6bafc6bcb2c23d4-102-89-75-141.serveousercontent.com"
 
+def self_ping_loop():
+    """Periodically pings local/cloud web server every 10 minutes to prevent sleep/spindowns."""
+    import time
+    import httpx
+    while True:
+        time.sleep(600)
+        try:
+            httpx.get("http://127.0.0.1:5000/api/stats", timeout=5.0)
+        except Exception:
+            pass
+
 def start_dashboard_server():
     """Start Flask web analytics dashboard in a background thread."""
     try:
         from dashboard import app
         log = logging.getLogger('werkzeug')
         log.setLevel(logging.ERROR)
+        
+        # Launch self-ping thread
+        ping_thread = threading.Thread(target=self_ping_loop, daemon=True)
+        ping_thread.start()
+
         app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
     except Exception as e:
         logger.error(f"Error starting dashboard server: {e}")
