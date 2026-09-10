@@ -196,7 +196,7 @@ def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
     if "lyrics" in lower or "words of" in lower or "words to" in lower:
         clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|get\s+|find\s+|fetch\s+|show\s+me\s+)+', '', lower)
         clean = re.sub(r'^(?:the\s+)?lyrics\s+(?:of|for|to)?\s*', '', clean)
-        clean = re.sub(r'\s+lyrics$', '', clean).strip()
+        clean = re.sub(r'\s+lyrics$', '', clean).strip(" '\"`\t\r\n")
         if clean and len(clean) >= 2:
             return ("lyrics", clean)
 
@@ -204,7 +204,7 @@ def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
     if any(kw in lower for kw in ["movie", "film", "cinema", "series", "season", "episode", "nollywood"]):
         clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|download\s+|find\s+|get\s+|fetch\s+|search\s+for\s+|show\s+me\s+|watch\s+)+', '', lower)
         clean = re.sub(r'^(?:the\s+)?(?:movie|film|cinema|series|season|show|episode|nollywood)\s+(?:called\s+|titled\s+|named\s+|for\s+)?', '', clean)
-        clean = re.sub(r'\s+(?:movie|film|series|season|episode|mp4|hd)$', '', clean).strip()
+        clean = re.sub(r'\s+(?:movie|film|series|season|episode|mp4|hd)$', '', clean).strip(" '\"`\t\r\n")
         if clean and len(clean) >= 2:
             return ("movie", clean)
 
@@ -212,7 +212,7 @@ def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
     if any(kw in lower for kw in ["song", "music", "mp3", "audio", "track", "single", "album"]):
         clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|download\s+|find\s+|get\s+|fetch\s+|play\s+|listen\s+to\s+)+', '', lower)
         clean = re.sub(r'^(?:the\s+)?(?:song|music|audio|track|mp3|single|album)\s+(?:by\s+|called\s+|titled\s+|named\s+|for\s+)?', '', clean)
-        clean = re.sub(r'\s+(?:song|music|audio|mp3|track)$', '', clean).strip()
+        clean = re.sub(r'\s+(?:song|music|audio|mp3|track)$', '', clean).strip(" '\"`\t\r\n")
         if clean and len(clean) >= 2:
             return ("song", clean)
 
@@ -220,7 +220,7 @@ def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
     if any(kw in lower for kw in ["pdf", "book", "ebook", "document", "filetype:pdf"]):
         clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|download\s+|find\s+|get\s+|fetch\s+|search\s+for\s+)+', '', lower)
         clean = re.sub(r'^(?:the\s+)?(?:pdf|book|ebook|document)\s+(?:on|about|for|of)?\s*', '', clean)
-        clean = re.sub(r'\s+(?:pdf|book|ebook|file)$', '', clean).strip()
+        clean = re.sub(r'\s+(?:pdf|book|ebook|file)$', '', clean).strip(" '\"`\t\r\n")
         if clean and len(clean) >= 2:
             return ("pdf", clean)
 

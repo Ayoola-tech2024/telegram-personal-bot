@@ -464,6 +464,7 @@ async def movie_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await run_movie_search(update, context, query)
 
 async def run_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str):
+    query = query.strip(" '\"`\t\r\n")
     user = update.effective_user
     if user:
         log_activity(user.id, user.username, user.first_name, "movie_search", query)
@@ -484,18 +485,25 @@ async def run_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE, q
 
     try:
         if first_movie.get('poster_url'):
-            await msg.delete()
-            await update.message.reply_photo(
-                photo=first_movie['poster_url'],
-                caption=text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
-        else:
-            await msg.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+            try:
+                await update.message.reply_photo(
+                    photo=first_movie['poster_url'],
+                    caption=text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+                await msg.delete()
+                return
+            except Exception as img_err:
+                logger.warning(f"Could not send poster photo for {first_movie['title']}: {img_err}")
+
+        await msg.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
     except Exception as e:
         logger.error(f"Error sending movie results: {e}")
-        await msg.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        try:
+            await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+        except Exception:
+            pass
 
 async def movie_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
