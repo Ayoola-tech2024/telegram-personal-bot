@@ -192,51 +192,61 @@ def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
     """Fast regex-based intent classification without calling LLM (0ms latency)."""
     lower = text.strip().lower()
 
-    # If message is a long conversational sentence (>35 chars or has conversational indicators), pass to AI for entity extraction
-    conversational_indicators = ["remember", "should know", "help me", "i need", "what is", "who sang", "artist"]
-    if len(lower) > 35 or any(ind in lower for ind in conversational_indicators):
-        return None
-
     # 1. LYRICS Intent
-    if "lyrics" in lower or "words to" in lower or "text of" in lower:
-        clean = re.sub(r'^(?:show\s+me\s+|get\s+|find\s+|fetch\s+)?(?:the\s+)?lyrics\s+(?:for|of|to)?\s*', '', lower)
+    if "lyrics" in lower or "words of" in lower or "words to" in lower:
+        clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|get\s+|find\s+|fetch\s+|show\s+me\s+)+', '', lower)
+        clean = re.sub(r'^(?:the\s+)?lyrics\s+(?:of|for|to)?\s*', '', clean)
         clean = re.sub(r'\s+lyrics$', '', clean).strip()
-        clean = re.sub(r'^(?:words\s+to|text\s+of)\s+', '', clean).strip()
-        if clean and len(clean) > 2 and len(clean) < 30:
+        if clean and len(clean) >= 2:
             return ("lyrics", clean)
 
-    # 2. SONG Intent
-    if any(kw in lower for kw in ["song", "music", "mp3", "audio", "track", "playlist"]) or lower.startswith("play ") or lower.startswith("download audio "):
-        clean = re.sub(r'^(?:where\s+can\s+i\s+(?:get|download|find)\s+)?(?:download|get|find|fetch|play|listen\s+to)\s+(?:the\s+)?(?:song|music|audio|track|mp3)?\s*', '', lower)
-        clean = re.sub(r'\s+(?:song|music|audio|mp3|track)$', '', clean).strip()
-        if clean and len(clean) > 2 and clean not in ["song", "music", "audio", "mp3", "track"]:
-            return ("song", clean)
-
-    # 3. MOVIE Intent
-    if any(kw in lower for kw in ["movie", "film", "cinema", "series", "season", "episode"]) or lower.startswith("download ") or lower.startswith("get ") or lower.startswith("find ") or lower.startswith("watch "):
-        clean = re.sub(r'^(?:where\s+can\s+i\s+(?:get|download|find|watch)\s+)?(?:download|get|find|fetch|search\s+for|watch)\s+(?:the\s+)?(?:movie|film|cinema|series|season|show)?\s*', '', lower)
-        clean = re.sub(r'\s+(?:movie|film|mp4|series|season|episode)$', '', clean).strip()
-        if clean and len(clean) > 2 and clean not in ["movie", "the movie", "a movie", "anything"]:
+    # 2. MOVIE / FILM Intent
+    if any(kw in lower for kw in ["movie", "film", "cinema", "series", "season", "episode", "nollywood"]):
+        clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|download\s+|find\s+|get\s+|fetch\s+|search\s+for\s+|show\s+me\s+|watch\s+)+', '', lower)
+        clean = re.sub(r'^(?:the\s+)?(?:movie|film|cinema|series|season|show|episode|nollywood)\s+(?:called\s+|titled\s+|named\s+|for\s+)?', '', clean)
+        clean = re.sub(r'\s+(?:movie|film|series|season|episode|mp4|hd)$', '', clean).strip()
+        if clean and len(clean) >= 2:
             return ("movie", clean)
 
-    # 4. WEATHER Intent
-    if "weather" in lower or "temperature in" in lower:
+    # 3. SONG / MUSIC Intent
+    if any(kw in lower for kw in ["song", "music", "mp3", "audio", "track", "single", "album"]):
+        clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|download\s+|find\s+|get\s+|fetch\s+|play\s+|listen\s+to\s+)+', '', lower)
+        clean = re.sub(r'^(?:the\s+)?(?:song|music|audio|track|mp3|single|album)\s+(?:by\s+|called\s+|titled\s+|named\s+|for\s+)?', '', clean)
+        clean = re.sub(r'\s+(?:song|music|audio|mp3|track)$', '', clean).strip()
+        if clean and len(clean) >= 2:
+            return ("song", clean)
+
+    # 4. PDF / BOOK Intent
+    if any(kw in lower for kw in ["pdf", "book", "ebook", "document", "filetype:pdf"]):
+        clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|download\s+|find\s+|get\s+|fetch\s+|search\s+for\s+)+', '', lower)
+        clean = re.sub(r'^(?:the\s+)?(?:pdf|book|ebook|document)\s+(?:on|about|for|of)?\s*', '', clean)
+        clean = re.sub(r'\s+(?:pdf|book|ebook|file)$', '', clean).strip()
+        if clean and len(clean) >= 2:
+            return ("pdf", clean)
+
+    # 5. WEATHER Intent
+    if "weather" in lower or "temperature" in lower:
         clean = re.sub(r'^(?:how\s+is\s+the\s+|get\s+|show\s+|what\s+is\s+the\s+)?weather\s+(?:in|for|at)?\s*', '', lower)
         clean = re.sub(r'^(?:temperature\s+in)\s+', '', clean).strip()
         return ("weather", clean or "Lagos")
 
-    # 5. NEWS Intent
+    # 6. NEWS Intent
     if "news" in lower or "headlines" in lower:
         clean = re.sub(r'^(?:get\s+|show\s+|fetch\s+|latest\s+|top\s+)?news\s+(?:in|about|for|on)?\s*', '', lower)
         clean = re.sub(r'\s+news$', '', clean).strip()
         return ("news", clean or "top breaking headlines")
 
-    if lower.startswith("search ") or lower.startswith("google "):
-        return ("search", text.split(" ", 1)[1])
-    if lower.startswith("image ") or lower.startswith("photo "):
-        return ("image", text.split(" ", 1)[1])
-    if lower.startswith("pdf ") or lower.startswith("book "):
-        return ("pdf", text.split(" ", 1)[1])
+    # 7. IMAGE / PHOTO Intent
+    if any(kw in lower for kw in ["image", "photo", "picture", "wallpaper"]):
+        clean = re.sub(r'^(?:get\s+|show\s+|fetch\s+|search\s+for\s+)?(?:image|photo|picture|wallpaper)\s+(?:of|for)?\s*', '', lower)
+        if clean and len(clean) >= 2:
+            return ("image", clean)
+
+    # Direct "download <title>" or "find <title>" or "get <title>" fallback (defaults to movie/media)
+    if lower.startswith("download ") or lower.startswith("get ") or lower.startswith("find "):
+        clean = re.sub(r'^(?:download|get|find|fetch)\s+(?:the\s+)?', '', lower).strip()
+        if clean and len(clean) >= 2:
+            return ("movie", clean)
 
     return None
 

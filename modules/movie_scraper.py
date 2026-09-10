@@ -356,6 +356,11 @@ class MovieScraper:
             filtered_results.sort(key=lambda x: x.get("score", 0), reverse=True)
             return filtered_results
 
+        if not merged_results:
+            web_results = await self.search_web_indexer(query)
+            if web_results:
+                return web_results
+
         return merged_results
 
     async def get_download_links(self, page_url: str) -> List[Dict[str, str]]:
