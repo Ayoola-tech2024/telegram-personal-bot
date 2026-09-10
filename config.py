@@ -89,11 +89,10 @@ def validate_config():
     if not TELEGRAM_BOT_TOKEN:
         errors.append("TELEGRAM_BOT_TOKEN is not set")
     if ALLOWED_USER_ID == 0:
-        errors.append("ALLOWED_USER_ID is not set")
+        logger.info("Config Info: ALLOWED_USER_ID not set (Public access mode enabled)")
     if not GEMINI_API_KEY:
-        errors.append("GEMINI_API_KEY is not set (AI features will be disabled)")
         logger.warning("GEMINI_API_KEY not set - AI features disabled")
     if errors:
         for e in errors:
-            logger.warning(f"Config Warning: {e}")
-    return len([e for e in errors if "GEMINI" not in e]) == 0
+            logger.error(f"Config Error: {e}")
+    return len(errors) == 0

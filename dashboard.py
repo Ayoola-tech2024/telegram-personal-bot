@@ -40,5 +40,7 @@ def api_logs():
     return jsonify([dict(r) for r in rows])
 
 if __name__ == "__main__":
-    logger.info("🌐 Starting Web Analytics Dashboard on port 5000...")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    import os
+    port = int(os.getenv("PORT", 5000))
+    logger.info(f"🌐 Starting Web Analytics Dashboard on port {port}...")
+    app.run(host="0.0.0.0", port=port, debug=False)
