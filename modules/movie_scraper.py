@@ -310,11 +310,7 @@ class MovieScraper:
             self.search_nollysauce(query),
             self.search_waploaded(query),
             self.search_1337x(query),
-            self.search_yts(query),
-            self.search_fzmovies(query),
-            self.search_toxicwap(query),
-            self.search_o2tvseries(query),
-            self.search_eztv(query),
+            self.search_web_indexer(query),
         ]
         
         async def run_fast(coro):
