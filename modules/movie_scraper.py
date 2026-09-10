@@ -469,18 +469,28 @@ async def run_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE, q
     if user:
         log_activity(user.id, user.username, user.first_name, "movie_search", query)
 
-    msg = await update.message.reply_text(f"🔍 Searching all movie portals & global databases for <b>{query}</b>...", parse_mode="HTML")
+    msg = await update.message.reply_text(
+        f"🔍 <b>Searching 14+ portals & global databases for '{query}'...</b>\n"
+        f"<i>Scanning Nkiri, 9jarocks, FzMovies, 1337x, NetNaija...</i>",
+        parse_mode="HTML"
+    )
 
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     results = await scraper.search_all(query)
 
     if not results:
-        await msg.edit_text(f"No movies found for '<b>{query}</b>'. Try another keyword like <code>Spider-Man No Way Home</code>!", parse_mode="HTML")
+        await msg.edit_text(f"❌ No movies found for '<b>{query}</b>'. Try another title like <code>Avatar</code> or <code>Spiderman</code>!", parse_mode="HTML")
         return
 
     context.user_data['movie_results'] = results
 
     first_movie = results[0]
-    text = f"🎬 <b>{first_movie['title']}</b>\n📅 Year: {first_movie.get('year', 'N/A')}\n🔗 Source: {first_movie['source']}"
+    text = (
+        f"🎬 <b>{first_movie['title']}</b>\n"
+        f"📅 Year: {first_movie.get('year', 'N/A')}\n"
+        f"🔗 Source: {first_movie['source']}\n\n"
+        f"<i>Select movie or click below to extract download servers:</i>"
+    )
     keyboard = movie_results_keyboard(results)
 
     try:
@@ -540,10 +550,11 @@ async def movie_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         movie = results[index]
 
+        status_text = f"⚡ <b>Extracting HD download servers for '{movie['title']}'...</b>\n<i>Connecting to high-speed file mirrors...</i>"
         if query.message.photo:
-            await query.edit_message_caption(caption=f"🔍 Extracting download servers for <b>{movie['title']}</b>...", parse_mode="HTML")
+            await query.edit_message_caption(caption=status_text, parse_mode="HTML")
         else:
-            await query.edit_message_text(f"🔍 Extracting download servers for <b>{movie['title']}</b>...", parse_mode="HTML")
+            await query.edit_message_text(status_text, parse_mode="HTML")
 
         links = await scraper.get_download_links(movie['page_url'])
         context.user_data['movie_links'] = links
