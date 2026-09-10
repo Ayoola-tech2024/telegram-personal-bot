@@ -94,7 +94,7 @@ Send any image, video, DOCX, or PDF file to convert format or extract audio/text
 /clear - Clear AI chat history
 """
 
-PUBLIC_DASHBOARD_URL = "https://8374628fa34d20f8-102-89-75-141.serveousercontent.com"
+PUBLIC_DASHBOARD_URL = "https://telegram-personal-bot-kzo4.onrender.com/"
 
 def self_ping_loop(port: int):
     """Periodically pings local/cloud web server every 10 minutes to prevent sleep/spindowns."""
