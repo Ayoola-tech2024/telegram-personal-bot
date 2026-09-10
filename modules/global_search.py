@@ -63,6 +63,95 @@ def generate_ai_content(prompt: str) -> Optional[str]:
                     break
     return None
 
+@restricted
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = " ".join(context.args) if context.args else ""
+    if not query:
+        await update.message.reply_text("Please provide a search query. Usage: /search <query>")
+        return
+
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "web_search", query)
+
+    status_msg = await update.message.reply_text('🔍 Searching...', parse_mode='HTML')
+    
+    try:
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(None, lambda: DDGS().text(query, max_results=5))
+            
+        if not results:
+            await status_msg.edit_text("No results found for your query.")
+            log_search(query, "text", 0)
+            return
+
+        log_search(query, "text", len(results))
+
+        snippets = []
+        for r in results:
+            title = r.get('title', 'No title')
+            body = r.get('body', 'No description')
+            link = r.get('href', '')
+            snippets.append(f"Title: {title}\nSummary: {body}\nLink: {link}")
+
+        search_context = "\n\n".join(snippets)
+        prompt = (
+            f"You are a helpful search assistant. Based on the following web search results for the query '{query}', "
+            f"write a concise, informative summary. "
+            f"Include inline citations to the sources using HTML links (<a href='url'>Link text</a>). "
+            f"Format the output using ONLY these HTML tags: <b>, <i>, <a>, <code>, <pre>. "
+            f"Do not use markdown formatting like ** or *.\n\n"
+            f"Search Results:\n{search_context}"
+        )
+
+        ai_summary = generate_ai_content(prompt)
+        reply_text = f"<b>Search:</b> <i>{query}</i>\n\n{ai_summary or search_context}"
+        await status_msg.edit_text(reply_text, parse_mode='HTML', disable_web_page_preview=True)
+
+    except Exception as e:
+        logger.error(f"Error in search_command: {e}")
+        await status_msg.edit_text("An error occurred while searching.")
+
+@restricted
+async def image_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = " ".join(context.args) if context.args else ""
+    if not query:
+        await update.message.reply_text("Please provide a search query. Usage: /image <query>")
+        return
+
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "image_search", query)
+
+    status_msg = await update.message.reply_text('🔍 Searching for images...', parse_mode='HTML')
+    
+    try:
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(None, lambda: DDGS().images(query, max_results=4))
+
+        if not results:
+            await status_msg.edit_text("No images found for your query.")
+            log_search(query, "image", 0)
+            return
+
+        log_search(query, "image", len(results))
+        
+        media_group = []
+        for res in results:
+            image_url = res.get('image')
+            if image_url:
+                media_group.append(InputMediaPhoto(media=image_url))
+
+        if media_group:
+            await update.message.reply_media_group(media=media_group)
+            await status_msg.delete()
+        else:
+            await status_msg.edit_text("Could not retrieve images.")
+
+    except Exception as e:
+        logger.error(f"Error in image_search_command: {e}")
+        await status_msg.edit_text("An error occurred while searching for images.")
+
 
 def search_song_options(query: str) -> list[dict]:
     """Fetch top 5 song options for user interactive selection."""
