@@ -113,11 +113,11 @@ def search_type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def confirm_download_keyboard(url: str, file_id: str = "0") -> InlineKeyboardMarkup:
+def confirm_download_keyboard(session_id: str) -> InlineKeyboardMarkup:
     """Simple confirm/cancel keyboard for direct file downloads."""
     buttons = [
-        [InlineKeyboardButton("✅ Download Now", callback_data=f"directdl:{file_id}:confirm")],
-        [InlineKeyboardButton("❌ Cancel", callback_data=f"directdl:{file_id}:cancel")],
+        [InlineKeyboardButton("✅ Download Now", callback_data=f"directdl:{session_id}:confirm")],
+        [InlineKeyboardButton("❌ Cancel", callback_data=f"directdl:{session_id}:cancel")],
     ]
     return InlineKeyboardMarkup(buttons)
 

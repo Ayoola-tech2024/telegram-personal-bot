@@ -97,13 +97,19 @@ Send any image, video, DOCX, or PDF file to convert format or extract audio/text
 PUBLIC_DASHBOARD_URL = "https://telegram-personal-bot-kzo4.onrender.com/"
 
 def self_ping_loop(port: int):
-    """Periodically pings local/cloud web server every 10 minutes to prevent sleep/spindowns."""
+    """Periodically pings local and public web server every 9 minutes to prevent sleep/spindowns."""
     import time
     import httpx
     while True:
-        time.sleep(600)
+        time.sleep(540)
         try:
             httpx.get(f"http://127.0.0.1:{port}/api/stats", timeout=5.0)
+        except Exception:
+            pass
+        try:
+            if PUBLIC_DASHBOARD_URL:
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DamisileKeepAlive/1.0"}
+                httpx.get(f"{PUBLIC_DASHBOARD_URL.rstrip('/')}/api/stats", headers=headers, timeout=10.0)
         except Exception:
             pass
 

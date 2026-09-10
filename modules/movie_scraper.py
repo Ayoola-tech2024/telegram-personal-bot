@@ -642,7 +642,8 @@ async def movie_download_callback(update: Update, context: ContextTypes.DEFAULT_
                     file_path = await download_direct_file(direct_url)
                     if file_path and os.path.exists(file_path):
                         with open(file_path, "rb") as vid:
-                            await update.effective_chat.send_video(
+                            await context.bot.send_video(
+                                chat_id=update.effective_chat.id,
                                 video=vid,
                                 caption=f"🎬 <b>{selected_link['label']}</b>\n\n<i>Fetched by Damisile AI</i>",
                                 parse_mode="HTML"

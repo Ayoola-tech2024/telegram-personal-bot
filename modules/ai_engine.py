@@ -1,3 +1,5 @@
+import os
+import uuid
 import asyncio
 import json
 import re
@@ -501,12 +503,30 @@ async def voice_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "Use ONLY Telegram HTML tags (<b>, <i>). Do NOT use markdown syntax."
         )
 
-        response = gen_client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=[audio_part, prompt]
-        )
+        response_text = None
+        for model_name in ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-3.6-flash']:
+            for _ in range(max(1, gemini_keys.key_count)):
+                gen_client = _create_client()
+                if not gen_client:
+                    continue
+                try:
+                    response = gen_client.models.generate_content(
+                        model=model_name,
+                        contents=[audio_part, prompt]
+                    )
+                    if response and response.text:
+                        response_text = response.text
+                        break
+                except Exception as model_err:
+                    if any(kw in str(model_err).lower() for kw in ['429', 'quota', 'rate limit', 'resource exhausted']):
+                        logger.warning(f"Voice note quota on {model_name}, rotating key...")
+                        gemini_keys.rotate()
+                    else:
+                        break
+            if response_text:
+                break
 
-        ai_text = response.text or "Could not process voice note."
+        ai_text = response_text or "Could not process voice note."
         ai_html = clean_markdown_to_html(ai_text)
         await status_msg.edit_text(ai_html, parse_mode='HTML')
 

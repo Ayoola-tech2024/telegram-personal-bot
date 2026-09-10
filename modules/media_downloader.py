@@ -216,7 +216,7 @@ async def url_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                 await status_msg.delete()
                 cleanup_file(filepath)
-                log_download(url, "video", os.path.getsize(filepath) if os.path.exists(filepath) else 0)
+                log_download(url, title="Social Video", file_type="video", file_size=os.path.getsize(filepath) if os.path.exists(filepath) else 0)
                 return
         except Exception as e:
             logger.error(f"Zero-click video auto-download failed for {url}: {e}")
@@ -257,10 +257,16 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     session_id = data[1]
     format_id = data[2]
-    
+
+    if format_id == "cancel":
+        if query.message.photo:
+            await query.edit_message_caption("❌ Download cancelled.")
+        else:
+            await query.edit_message_text("❌ Download cancelled.")
+        return
+        
     session_data = context.user_data.get(session_id)
     if not session_data:
-        # edit_message_caption normally fails if there is no photo, edit_message_text used if text
         if query.message.photo:
             await query.edit_message_caption("❌ Session expired.")
         else:
@@ -306,10 +312,16 @@ async def direct_download_callback(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
     
     data = query.data.split(':')
-    if len(data) < 2:
+    if len(data) < 3:
         return
         
     session_id = data[1]
+    action = data[2]
+
+    if action == "cancel":
+        await query.edit_message_text("❌ Direct download cancelled.")
+        return
+        
     session_data = context.user_data.get(session_id)
     
     if not session_data:

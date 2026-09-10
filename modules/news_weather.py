@@ -113,20 +113,15 @@ async def run_news_search(update: Update, context: ContextTypes.DEFAULT_TYPE, to
 
         news_context = "\n\n".join(headlines[:5])
 
-        gen_client = _get_gemini_client()
-        if gen_client:
-            prompt = (
-                f"Summarize these top news stories for the topic '{topic}' into a clean 5-bullet daily news digest. "
-                f"Include source links using HTML <a href='url'>Read more</a>. "
-                f"Use ONLY HTML tags (<b>, <i>, <a>). Do NOT use markdown syntax.\n\n{news_context}"
-            )
-            ai_res = gen_client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=prompt
-            )
-            digest = ai_res.text if ai_res else news_context
-        else:
-            digest = news_context
+        prompt = (
+            f"Summarize these top news stories for the topic '{topic}' into a clean 5-bullet daily news digest. "
+            f"Include source links using HTML <a href='url'>Read more</a>. "
+            f"Use ONLY HTML tags (<b>, <i>, <a>). Do NOT use markdown syntax.\n\n{news_context}"
+        )
+
+        from modules.global_search import generate_ai_content
+        ai_res = generate_ai_content(prompt)
+        digest = ai_res if ai_res else news_context
 
         report = f"📰 <b>Daily News Digest: {topic.title()}</b>\n\n" + digest
         if len(report) > 4000:
