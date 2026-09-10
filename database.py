@@ -1,5 +1,5 @@
 """
-SQLite Database layer for download history, search cache, and bookmarks.
+SQLite Database layer for download history, search cache, bookmarks, and user activity logging.
 """
 
 import sqlite3
@@ -47,6 +47,16 @@ def init_db():
             tags TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS activity_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            username TEXT,
+            first_name TEXT,
+            action_type TEXT,
+            details TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
 
     conn.commit()
@@ -76,6 +86,20 @@ def log_search(query: str, search_type: str = "web", results_count: int = 0):
     conn.close()
 
 
+def log_activity(user_id: int = 0, username: str = "", first_name: str = "", action_type: str = "usage", details: str = ""):
+    """Log any user activity/usage for global analytics dashboard."""
+    try:
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO activity_logs (user_id, username, first_name, action_type, details) VALUES (?, ?, ?, ?, ?)",
+            (user_id, username or "Anonymous", first_name or "User", action_type, details[:500]),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to log activity: {e}")
+
+
 def get_recent_downloads(limit: int = 10) -> list:
     """Get recent download history."""
     conn = get_connection()
@@ -95,3 +119,40 @@ def save_bookmark(url: str, title: str = "", summary: str = "", tags: str = ""):
     )
     conn.commit()
     conn.close()
+
+
+def get_analytics_stats() -> dict:
+    """Fetch comprehensive usage statistics for dashboard rendering."""
+    conn = get_connection()
+    
+    total_logs = conn.execute("SELECT COUNT(*) FROM activity_logs").fetchone()[0]
+    total_downloads = conn.execute("SELECT COUNT(*) FROM download_history").fetchone()[0]
+    total_searches = conn.execute("SELECT COUNT(*) FROM search_history").fetchone()[0]
+    
+    # Action type breakdown
+    action_rows = conn.execute(
+        "SELECT action_type, COUNT(*) as count FROM activity_logs GROUP BY action_type ORDER BY count DESC"
+    ).fetchall()
+    action_breakdown = {r['action_type']: r['count'] for r in action_rows}
+
+    # Top active users
+    user_rows = conn.execute(
+        "SELECT first_name, username, COUNT(*) as count FROM activity_logs GROUP BY user_id ORDER BY count DESC LIMIT 5"
+    ).fetchall()
+    top_users = [dict(r) for r in user_rows]
+
+    # Recent 50 activities
+    recent_logs = conn.execute(
+        "SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT 50"
+    ).fetchall()
+
+    conn.close()
+    return {
+        "total_logs": total_logs,
+        "total_downloads": total_downloads,
+        "total_searches": total_searches,
+        "action_breakdown": action_breakdown,
+        "top_users": top_users,
+        "recent_logs": [dict(r) for r in recent_logs]
+    }
+

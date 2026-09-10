@@ -8,6 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from config import logger, restricted, DOWNLOAD_DIR
+from database import log_activity
 
 def get_converter_keyboard(file_type: str, session_id: str) -> InlineKeyboardMarkup:
     """Generate conversion action buttons based on uploaded file type."""
@@ -34,6 +35,10 @@ async def document_upload_handler(update: Update, context: ContextTypes.DEFAULT_
     doc = message.document or message.video or (message.photo[-1] if message.photo else None)
     if not doc:
         return
+
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "file_converter", getattr(doc, 'file_name', 'uploaded file'))
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     session_id = uuid.uuid4().hex[:8]

@@ -9,7 +9,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import logger, restricted, DOWNLOAD_DIR
-from database import log_download
+from database import log_download, log_activity
 from modules.keyboards import quality_keyboard, confirm_download_keyboard
 
 URL_REGEX = re.compile(r'https?://[^\s<>"]+|www\.[^\s<>"]+')
@@ -175,6 +175,10 @@ async def url_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     url = urls[0]
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "media_link", url)
+
     session_id = uuid.uuid4().hex[:8]
     
     # ZERO-CLICK AUTO EXTRACTOR for Instagram Reels, TikToks, Shorts, X videos

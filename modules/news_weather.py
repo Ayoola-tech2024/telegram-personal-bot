@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import logger, restricted, GEMINI_API_KEY, gemini_keys
-from database import log_search
+from database import log_search, log_activity
 
 def _get_gemini_client():
     key = gemini_keys.current_key
@@ -24,6 +24,10 @@ async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await run_weather_search(update, context, city)
 
 async def run_weather_search(update: Update, context: ContextTypes.DEFAULT_TYPE, city: str):
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "weather", city)
+
     status_msg = await update.message.reply_text(f"🌤️ Fetching weather report for <b>{city.title()}</b>...", parse_mode="HTML")
 
     try:
@@ -85,6 +89,10 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await run_news_search(update, context, topic)
 
 async def run_news_search(update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str):
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "news", topic)
+
     status_msg = await update.message.reply_text(f"📰 Fetching latest news for <b>{topic}</b>...", parse_mode="HTML")
 
     try:

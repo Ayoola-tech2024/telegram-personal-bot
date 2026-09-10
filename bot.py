@@ -9,6 +9,7 @@ An all-in-one personal Telegram bot featuring:
 """
 
 import logging
+import threading
 from telegram import Update, BotCommand
 from telegram.ext import (
     Application,
@@ -19,7 +20,7 @@ from telegram.ext import (
 )
 
 from config import TELEGRAM_BOT_TOKEN, validate_config, logger
-from database import init_db
+from database import init_db, get_analytics_stats, log_activity
 
 # Import module handlers
 from modules.global_search import (
@@ -29,6 +30,8 @@ from modules.global_search import (
     lyrics_search_command,
     pdf_search_command,
     movie_search_command,
+    song_lyrics_callback,
+    song_select_callback,
 )
 from modules.movie_scraper import (
     movie_command,
@@ -70,6 +73,9 @@ HELP_TEXT = """
 /weather &lt;city&gt; - Live weather report
 /news &lt;topic&gt; - Daily news digest
 
+<b>📊 Live Telemetry & Dashboard:</b>
+/stats - View live public web analytics dashboard
+
 <b>🎬 Movies & Music:</b>
 Just type movie names (e.g. <code>spiderman</code>) or song names (e.g. <code>die with a smile</code>) directly!
 
@@ -88,9 +94,24 @@ Send any image, video, DOCX, or PDF file to convert format or extract audio/text
 /clear - Clear AI chat history
 """
 
+PUBLIC_DASHBOARD_URL = "https://e6bafc6bcb2c23d4-102-89-75-141.serveousercontent.com"
+
+def start_dashboard_server():
+    """Start Flask web analytics dashboard in a background thread."""
+    try:
+        from dashboard import app
+        log = logging.getLogger('werkzeug')
+        log.setLevel(logging.ERROR)
+        app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+    except Exception as e:
+        logger.error(f"Error starting dashboard server: {e}")
 
 async def start_command(update: Update, context):
     """Handle /start command."""
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "command", "/start")
+
     await update.message.reply_text(
         "👋 <b>Welcome to your Ultimate AI Bot!</b>\n\n"
         "I can download movies from 14+ portals, fetch MP3 songs, "
@@ -103,11 +124,37 @@ async def start_command(update: Update, context):
 
 async def help_command(update: Update, context):
     """Handle /help command."""
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "command", "/help")
     await update.message.reply_text(HELP_TEXT, parse_mode="HTML")
+
+
+async def stats_command(update: Update, context):
+    """Handle /stats or /admin command for live telemetry dashboard link."""
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "command", "/stats")
+
+    stats = get_analytics_stats()
+    text = (
+        f"📊 <b>Damisile AI - Live Usage & Intelligence Dashboard</b>\n\n"
+        f"• <b>Total Bot Interactions:</b> {stats['total_logs']}\n"
+        f"• <b>Media & Song Downloads:</b> {stats['total_downloads']}\n"
+        f"• <b>AI & Web Searches:</b> {stats['total_searches']}\n"
+        f"• <b>Active Authorized Users:</b> {len(stats['top_users'])}\n\n"
+        f"🌐 <b>Live Public Web Dashboard (View Anywhere):</b>\n"
+        f"<a href='{PUBLIC_DASHBOARD_URL}'>{PUBLIC_DASHBOARD_URL}</a>"
+    )
+    await update.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
 
 async def history_command(update: Update, context):
     """Handle /history command to show recent downloads."""
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "command", "/history")
+
     from database import get_recent_downloads
 
     downloads = get_recent_downloads(10)
@@ -130,6 +177,7 @@ async def set_bot_commands(application: Application):
     commands = [
         BotCommand("start", "Start the bot"),
         BotCommand("help", "Show all commands"),
+        BotCommand("stats", "Live telemetry dashboard"),
         BotCommand("search", "Search the web"),
         BotCommand("image", "Search for images"),
         BotCommand("song", "Find a song"),
@@ -156,6 +204,11 @@ def main():
     # Initialize database
     init_db()
 
+    # Start Flask Web Dashboard Server in background thread
+    dashboard_thread = threading.Thread(target=start_dashboard_server, daemon=True)
+    dashboard_thread.start()
+    logger.info("🌐 Web Analytics Dashboard running on http://localhost:5000")
+
     # Build application
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -163,6 +216,8 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("history", history_command))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("admin", stats_command))
 
     # Search commands
     app.add_handler(CommandHandler("search", search_command))
@@ -185,6 +240,8 @@ def main():
     app.add_handler(CallbackQueryHandler(movie_callback, pattern=r"^movie_"))
     app.add_handler(CallbackQueryHandler(movie_download_callback, pattern=r"^moviedl:"))
     app.add_handler(CallbackQueryHandler(converter_callback, pattern=r"^conv:"))
+    app.add_handler(CallbackQueryHandler(song_lyrics_callback, pattern=r"^songlyrics:"))
+    app.add_handler(CallbackQueryHandler(song_select_callback, pattern=r"^songselect:"))
 
     # --- Register Message Handlers ---
     # Voice notes & audio messages
@@ -219,3 +276,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

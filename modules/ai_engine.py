@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from typing import Dict, List, Optional
@@ -7,6 +8,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from config import logger, restricted, GEMINI_API_KEY, gemini_keys
+from database import log_activity
 
 try:
     from google import genai
@@ -33,12 +35,15 @@ MAX_HISTORY_LENGTH = 16
 SYSTEM_PROMPT = """
 You are Damisile AI — an elite, highly intelligent conversational AI assistant inside Telegram created by Ayoola Damisile.
 
+Live Search Integration:
+- You are equipped with real-time web search grounding context. Always analyze the provided live web search context to give accurate, factual answers for any year, technology release, event, or product requested by the user.
+
 Bot Capabilities:
 - You ARE connected to powerful tools inside this Telegram bot!
-- Movies: You CAN find and download movies! Tell users to use /movie <title> or say "download movie <name>" (the bot scrapes Nkiri, 9jarocks, FzMovies and bypasses redirects to give direct download buttons).
-- Social Media Videos/Audio: Users can paste any YouTube, X/Twitter, Facebook, Instagram, TikTok link directly to pick resolutions (4K, 1080p, MP3) and download.
-- Music & Songs: Users can use /song <name> to find audio tracks.
-- Web & PDF Search: Users can use /search <query>, /pdf <topic>, or /image <query>.
+- Movies: You CAN find and download movies! Tell users to use /movie <title> or say "download movie <name>" (the bot scrapes 14+ portals including Nkiri, 9jarocks, FzMovies, YTS and bypasses redirects to give direct download buttons).
+- Social Media Videos/Audio: Users can paste any YouTube, X/Twitter, Facebook, Instagram, TikTok link directly to auto-download videos or pick resolutions (4K, 1080p, MP3).
+- Music & Songs: Users can say "download song <name>" or use /song <name> to select from interactive track options with a View Lyrics button.
+- Web & PDF Search: Users can use /search <query>, /pdf <topic>, /image <query>, /weather <city>, or /news <topic>.
 
 Your Style:
 - Conversational, warm, articulate, witty, and deeply knowledgeable.
@@ -79,7 +84,31 @@ async def ask_ai(user_id: int, message: str) -> str:
         conversation_history[user_id] = []
 
     history = conversation_history[user_id]
-    history.append({"role": "user", "parts": [{"text": message}]})
+
+    # Smart Live Web Search Grounding for real-time accuracy (0 API cost)
+    web_context = ""
+    lower_msg = message.lower()
+    needs_grounding = any(kw in lower_msg for kw in [
+        "tell me about", "latest", "newest", "current", "who is", "what is", "where is",
+        "when did", "price of", "specs", "review", "news", "2026", "2025", "2024", "iphone", "samsung", "app"
+    ]) or ("?" in message and len(message) > 10)
+
+    if needs_grounding:
+        try:
+            from duckduckgo_search import DDGS
+            loop = asyncio.get_event_loop()
+            results = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: DDGS().text(message, max_results=3)),
+                timeout=2.5
+            )
+            if results:
+                snippets = [f"- {r.get('title')}: {r.get('body')}" for r in results]
+                web_context = "\n\n[Live Web Search Grounding Context]:\n" + "\n".join(snippets)
+        except Exception as e:
+            logger.warning(f"Live web grounding lookup skipped: {e}")
+
+    augmented_message = message + web_context if web_context else message
+    history.append({"role": "user", "parts": [{"text": augmented_message}]})
 
     if len(history) > MAX_HISTORY_LENGTH:
         history = history[-MAX_HISTORY_LENGTH:]
@@ -163,35 +192,40 @@ def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
     """Fast regex-based intent classification without calling LLM (0ms latency)."""
     lower = text.strip().lower()
 
-    # 1. LYRICS Intent (e.g. "lyrics for die with a smile", "die with a smile lyrics", "show lyrics of hello")
+    # If message is a long conversational sentence (>35 chars or has conversational indicators), pass to AI for entity extraction
+    conversational_indicators = ["remember", "should know", "help me", "i need", "what is", "who sang", "artist"]
+    if len(lower) > 35 or any(ind in lower for ind in conversational_indicators):
+        return None
+
+    # 1. LYRICS Intent
     if "lyrics" in lower or "words to" in lower or "text of" in lower:
         clean = re.sub(r'^(?:show\s+me\s+|get\s+|find\s+|fetch\s+)?(?:the\s+)?lyrics\s+(?:for|of|to)?\s*', '', lower)
         clean = re.sub(r'\s+lyrics$', '', clean).strip()
         clean = re.sub(r'^(?:words\s+to|text\s+of)\s+', '', clean).strip()
-        if clean and len(clean) > 2:
+        if clean and len(clean) > 2 and len(clean) < 30:
             return ("lyrics", clean)
 
-    # 2. SONG Intent (e.g. "download song die with a smile", "play dolly parton", "song die with a smile", "die with a smile mp3")
+    # 2. SONG Intent
     if any(kw in lower for kw in ["song", "music", "mp3", "audio", "track", "playlist"]) or lower.startswith("play ") or lower.startswith("download audio "):
         clean = re.sub(r'^(?:where\s+can\s+i\s+(?:get|download|find)\s+)?(?:download|get|find|fetch|play|listen\s+to)\s+(?:the\s+)?(?:song|music|audio|track|mp3)?\s*', '', lower)
         clean = re.sub(r'\s+(?:song|music|audio|mp3|track)$', '', clean).strip()
         if clean and len(clean) > 2 and clean not in ["song", "music", "audio", "mp3", "track"]:
             return ("song", clean)
 
-    # 3. MOVIE Intent (e.g. "download movie titanic", "watch spiderman", "movie titanic", "titanic film")
+    # 3. MOVIE Intent
     if any(kw in lower for kw in ["movie", "film", "cinema", "series", "season", "episode"]) or lower.startswith("download ") or lower.startswith("get ") or lower.startswith("find ") or lower.startswith("watch "):
         clean = re.sub(r'^(?:where\s+can\s+i\s+(?:get|download|find|watch)\s+)?(?:download|get|find|fetch|search\s+for|watch)\s+(?:the\s+)?(?:movie|film|cinema|series|season|show)?\s*', '', lower)
         clean = re.sub(r'\s+(?:movie|film|mp4|series|season|episode)$', '', clean).strip()
         if clean and len(clean) > 2 and clean not in ["movie", "the movie", "a movie", "anything"]:
             return ("movie", clean)
 
-    # 4. WEATHER Intent (e.g. "weather in lagos", "temperature in london", "how is weather")
+    # 4. WEATHER Intent
     if "weather" in lower or "temperature in" in lower:
         clean = re.sub(r'^(?:how\s+is\s+the\s+|get\s+|show\s+|what\s+is\s+the\s+)?weather\s+(?:in|for|at)?\s*', '', lower)
         clean = re.sub(r'^(?:temperature\s+in)\s+', '', clean).strip()
         return ("weather", clean or "Lagos")
 
-    # 5. NEWS Intent (e.g. "latest news", "news in nigeria", "tech news")
+    # 5. NEWS Intent
     if "news" in lower or "headlines" in lower:
         clean = re.sub(r'^(?:get\s+|show\s+|fetch\s+|latest\s+|top\s+)?news\s+(?:in|about|for|on)?\s*', '', lower)
         clean = re.sub(r'\s+news$', '', clean).strip()
@@ -207,12 +241,17 @@ def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
     return None
 
 async def classify_user_input(text: str) -> tuple[str, str]:
-    """Uses Gemini 3.6 Flash to classify ambiguous plain queries (e.g. 'spiderman brand new day', 'die with a smile')."""
+    """Uses Gemini 3.6 Flash to classify conversational queries and extract clean entity titles (e.g. 'Those Eyes by New West')."""
     global client
     if not client:
         return ("chat", text)
 
-    prompt = f'Classify the user intent for the message: "{text}". Reply with a valid JSON object with keys "type" (must be "movie", "song", "lyrics", or "chat") and "query" (clean title). Example: {{"type": "lyrics", "query": "title"}}'
+    prompt = (
+        f'Analyze the user message: "{text}".\n'
+        f'Extract the user intent and clean title/query.\n'
+        f'Reply ONLY with a JSON object: {{"type": "movie"|"song"|"lyrics"|"both"|"chat", "query": "exact title or artist and title"}}.\n'
+        f'Use "both" if the user wants BOTH the song audio and lyrics. Example: {{"type": "both", "query": "Those Eyes by New West"}}'
+    )
 
     try:
         response = client.models.generate_content(
@@ -321,8 +360,20 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         from modules.global_search import run_lyrics_search
         await run_lyrics_search(update, context, query)
         return
+    elif intent_type == "both":
+        from modules.global_search import run_song_download, run_lyrics_search
+        await asyncio.gather(
+            run_song_download(update, context, query),
+            run_lyrics_search(update, context, query),
+            return_exceptions=True
+        )
+        return
 
     # Regular AI Chat
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "ai_chat", message_text)
+
     ai_response = await ask_ai(user_id, message_text)
     await update.message.reply_text(ai_response, parse_mode='HTML')
 
@@ -336,6 +387,10 @@ async def summarize_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not url.startswith('http'):
         url = 'https://' + url
 
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "ai_summarize", url)
+
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     summary = await summarize_url(url)
     await update.message.reply_text(summary, parse_mode='HTML')
@@ -348,6 +403,9 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     question = ' '.join(context.args)
     user_id = update.effective_user.id
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "ai_ask", question)
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     ai_response = await ask_ai(user_id, question)
@@ -366,6 +424,10 @@ async def voice_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     voice = message.voice or message.audio
     if not voice:
         return
+
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "voice_note", "Telegram Voice Note")
 
     status_msg = await message.reply_text("🎙️ <i>Listening to your voice note...</i>", parse_mode='HTML')
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="record_voice")

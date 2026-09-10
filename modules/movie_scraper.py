@@ -9,7 +9,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMe
 from telegram.ext import ContextTypes
 
 from config import logger, restricted, DOWNLOAD_DIR
-from database import log_download
+from database import log_download, log_activity
 from modules.keyboards import movie_results_keyboard, movie_download_keyboard
 
 from duckduckgo_search import DDGS
@@ -459,6 +459,10 @@ async def movie_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await run_movie_search(update, context, query)
 
 async def run_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str):
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "movie_search", query)
+
     msg = await update.message.reply_text(f"🔍 Searching all movie portals & global databases for <b>{query}</b>...", parse_mode="HTML")
 
     results = await scraper.search_all(query)

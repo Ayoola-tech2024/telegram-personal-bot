@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Damisile AI - Live Analytics Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            900: '#1e1b4b',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+    
+    <!-- Navbar -->
+    <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-indigo-500/30">
+                    ⚡
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Damisile AI Analytics</h1>
+                    <p class="text-xs text-slate-400">Real-Time Usage & Bot Intelligence</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-pulse">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Live Telemetry
+                </span>
+                <button onclick="fetchStats()" class="p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-all">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+        <!-- Stat KPI Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <!-- Card 1 -->
+            <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 shadow-xl hover:border-indigo-500/50 transition-all group">
+                <div class="flex items-center justify-between">
+                    <span class="text-slate-400 text-sm font-medium">Total Bot Usage</span>
+                    <div class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-bolt"></i>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <h3 class="text-3xl font-extrabold" id="kpi-total-logs">{{ stats.total_logs }}</h3>
+                    <p class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-chart-line text-emerald-400 mr-1"></i> Recorded interactions</p>
+                </div>
+            </div>
+
+            <!-- Card 2 -->
+            <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 shadow-xl hover:border-purple-500/50 transition-all group">
+                <div class="flex items-center justify-between">
+                    <span class="text-slate-400 text-sm font-medium">Media Downloads</span>
+                    <div class="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-circle-down"></i>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <h3 class="text-3xl font-extrabold" id="kpi-total-downloads">{{ stats.total_downloads }}</h3>
+                    <p class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-film text-purple-400 mr-1"></i> Movies, Audio & Reels</p>
+                </div>
+            </div>
+
+            <!-- Card 3 -->
+            <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 shadow-xl hover:border-cyan-500/50 transition-all group">
+                <div class="flex items-center justify-between">
+                    <span class="text-slate-400 text-sm font-medium">AI & Web Searches</span>
+                    <div class="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <h3 class="text-3xl font-extrabold" id="kpi-total-searches">{{ stats.total_searches }}</h3>
+                    <p class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-brain text-cyan-400 mr-1"></i> Real-time queries</p>
+                </div>
+            </div>
+
+            <!-- Card 4 -->
+            <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-5 shadow-xl hover:border-emerald-500/50 transition-all group">
+                <div class="flex items-center justify-between">
+                    <span class="text-slate-400 text-sm font-medium">Active Users</span>
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-users"></i>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <h3 class="text-3xl font-extrabold" id="kpi-active-users">{{ stats.top_users | length }}</h3>
+                    <p class="text-xs text-slate-400 mt-1"><i class="fa-solid fa-user-check text-emerald-400 mr-1"></i> Authorized Telegram accounts</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Action Distribution Chart -->
+            <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-6 shadow-xl">
+                <h3 class="text-base font-semibold mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-chart-pie text-indigo-400"></i> Action Distribution
+                </h3>
+                <div class="h-64 flex justify-center items-center">
+                    <canvas id="actionChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Top Users Activity Bar Chart -->
+            <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-6 shadow-xl">
+                <h3 class="text-base font-semibold mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-chart-bar text-violet-400"></i> Top User Activity
+                </h3>
+                <div class="h-64">
+                    <canvas id="userChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Activity Log Table -->
+        <div class="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-6 shadow-xl space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <h3 class="text-lg font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-indigo-400"></i> Activity Logs Stream
+                </h3>
+                <div class="flex items-center gap-3">
+                    <input type="text" id="searchInput" onkeyup="filterLogs()" placeholder="Search logs..." class="bg-slate-800 border border-slate-700 text-sm rounded-xl px-4 py-2 text-white focus:outline-none focus:border-indigo-500 transition-all w-full sm:w-64">
+                </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-slate-800">
+                <table class="w-full text-left text-sm text-slate-300">
+                    <thead class="bg-slate-800/80 text-xs uppercase text-slate-400 font-semibold border-b border-slate-700">
+                        <tr>
+                            <th class="px-4 py-3">Time</th>
+                            <th class="px-4 py-3">User</th>
+                            <th class="px-4 py-3">Action Type</th>
+                            <th class="px-4 py-3">Details / Request</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsTableBody" class="divide-y divide-slate-800">
+                        {% for log in stats.recent_logs %}
+                        <tr class="hover:bg-slate-800/40 transition-colors">
+                            <td class="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">{{ log.timestamp }}</td>
+                            <td class="px-4 py-3 font-medium text-slate-200">{{ log.first_name }} <span class="text-xs text-slate-500">(@{{ log.username }})</span></td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                    {{ log.action_type }}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-slate-300 font-mono text-xs max-w-md truncate">{{ log.details }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        let initialStats = {{ stats | tojson }};
+        let actionChart, userChart;
+
+        function initCharts(data) {
+            // Action Pie Chart
+            const actionCtx = document.getElementById('actionChart').getContext('2d');
+            const actionLabels = Object.keys(data.action_breakdown || {});
+            const actionCounts = Object.values(data.action_breakdown || {});
+
+            actionChart = new Chart(actionCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: actionLabels.length ? actionLabels : ['No Activity Yet'],
+                    datasets: [{
+                        data: actionCounts.length ? actionCounts : [1],
+                        backgroundColor: ['#6366f1', '#8b5cf6', '#ec4899', '#14b8a6', '#f59e0b', '#3b82f6', '#10b981'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#94a3b8' } }
+                    }
+                }
+            });
+
+            // Top Users Bar Chart
+            const userCtx = document.getElementById('userChart').getContext('2d');
+            const userNames = (data.top_users || []).map(u => u.first_name || u.username);
+            const userCounts = (data.top_users || []).map(u => u.count);
+
+            userChart = new Chart(userCtx, {
+                type: 'bar',
+                data: {
+                    labels: userNames.length ? userNames : ['User'],
+                    datasets: [{
+                        label: 'Interactions',
+                        data: userCounts.length ? userCounts : [0],
+                        backgroundColor: '#6366f1',
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#94a3b8' }, grid: { display: false } },
+                        y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        async function fetchStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+
+                document.getElementById('kpi-total-logs').innerText = data.total_logs;
+                document.getElementById('kpi-total-downloads').innerText = data.total_downloads;
+                document.getElementById('kpi-total-searches').innerText = data.total_searches;
+                document.getElementById('kpi-active-users').innerText = (data.top_users || []).length;
+
+                // Update charts
+                actionChart.data.labels = Object.keys(data.action_breakdown || {});
+                actionChart.data.datasets[0].data = Object.values(data.action_breakdown || {});
+                actionChart.update();
+
+                userChart.data.labels = (data.top_users || []).map(u => u.first_name || u.username);
+                userChart.data.datasets[0].data = (data.top_users || []).map(u => u.count);
+                userChart.update();
+
+                // Update table
+                const tbody = document.getElementById('logsTableBody');
+                tbody.innerHTML = (data.recent_logs || []).map(log => `
+                    <tr class="hover:bg-slate-800/40 transition-colors">
+                        <td class="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">${log.timestamp}</td>
+                        <td class="px-4 py-3 font-medium text-slate-200">${log.first_name} <span class="text-xs text-slate-500">(@${log.username})</span></td>
+                        <td class="px-4 py-3 whitespace-nowrap">
+                            <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                ${log.action_type}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-slate-300 font-mono text-xs max-w-md truncate">${log.details || ''}</td>
+                    </tr>
+                `).join('');
+            } catch (err) {
+                console.error("Failed updating stats:", err);
+            }
+        }
+
+        function filterLogs() {
+            const input = document.getElementById('searchInput').value.toLowerCase();
+            const rows = document.querySelectorAll('#logsTableBody tr');
+            rows.forEach(row => {
+                const text = row.innerText.toLowerCase();
+                row.style.display = text.includes(input) ? '' : 'none';
+            });
+        }
+
+        window.onload = () => {
+            initCharts(initialStats);
+            setInterval(fetchStats, 5000); // Auto-refresh every 5s
+        };
+    </script>
+</body>
+</html>
