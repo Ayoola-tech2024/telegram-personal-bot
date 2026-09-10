@@ -461,10 +461,16 @@ async def voice_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         from google.genai import types
         audio_part = types.Part.from_bytes(data=voice_bytes, mime_type="audio/ogg")
         prompt = (
-            "Transcribe the user's voice message accurately, then answer their question concisely. "
-            "Structure your output as:\n"
-            "<b>Transcribed:</b> <i>\"[transcript here]\"</i>\n\n"
-            "[Your helpful answer here]"
+            "Analyze and transcribe this audio recording (voice note, lecture, or podcast). "
+            "Generate a structured Executive Summary formatted for Telegram HTML:\n\n"
+            "🎙️ <b>Transcribed Summary:</b>\n<i>\"[Concise summary of the recording]\"</i>\n\n"
+            "📌 <b>Key Takeaways:</b>\n"
+            "• [Key point 1]\n"
+            "• [Key point 2]\n"
+            "• [Key point 3]\n\n"
+            "⚡ <b>Action Items & Key Decisions:</b>\n"
+            "• [Action item 1]\n"
+            "Use ONLY Telegram HTML tags (<b>, <i>). Do NOT use markdown syntax."
         )
 
         response = gen_client.models.generate_content(

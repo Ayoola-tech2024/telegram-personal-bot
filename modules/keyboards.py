@@ -133,3 +133,23 @@ def pagination_keyboard(current_page: int, total_pages: int, prefix: str) -> Inl
         row.append(InlineKeyboardButton("Next ➡️", callback_data=f"{prefix}:page:{current_page + 1}"))
     buttons.append(row)
     return InlineKeyboardMarkup(buttons)
+
+
+def voice_summary_keyboard(session_id: str) -> InlineKeyboardMarkup:
+    """Build keyboard for voice notes to choose Spoken Reply or AI Executive Summary."""
+    buttons = [
+        [
+            InlineKeyboardButton("🎙️ Spoken Voice Reply", callback_data=f"voice_action:speak:{session_id}"),
+            InlineKeyboardButton("📝 AI Executive Summary", callback_data=f"voice_action:summary:{session_id}"),
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def playlist_download_keyboard(playlist_id: str, count: int) -> InlineKeyboardMarkup:
+    """Build keyboard for playlist batch download."""
+    buttons = [
+        [InlineKeyboardButton(f"📥 Download {count} Tracks Batch", callback_data=f"playlist_dl:{playlist_id}:all")],
+        [InlineKeyboardButton("❌ Cancel", callback_data=f"playlist_dl:{playlist_id}:cancel")]
+    ]
+    return InlineKeyboardMarkup(buttons)

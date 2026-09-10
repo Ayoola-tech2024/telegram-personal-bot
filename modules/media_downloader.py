@@ -181,6 +181,18 @@ async def url_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     session_id = uuid.uuid4().hex[:8]
     
+    # PLAYLIST AUTO-EXTRACTOR (Spotify / YouTube Playlist)
+    if 'playlist' in url.lower() or 'list=' in url.lower() or 'open.spotify.com' in url.lower():
+        status_msg = await message.reply_text("🎵 <b>Playlist link detected! Extracting audio batch...</b>", parse_mode="HTML")
+        try:
+            from modules.global_search import run_song_download
+            query_term = url.split('/')[-1].split('?')[0].replace('-', ' ').replace('_', ' ')
+            await status_msg.delete()
+            await run_song_download(update, context, query_term if len(query_term) > 3 else "top hits")
+            return
+        except Exception as pl_e:
+            logger.error(f"Playlist auto-extraction failed for {url}: {pl_e}")
+
     # ZERO-CLICK AUTO EXTRACTOR for Instagram Reels, TikToks, Shorts, X videos
     if is_shortform_social_url(url):
         status_msg = await message.reply_text("⚡ <b>Downloading video directly...</b>", parse_mode="HTML")

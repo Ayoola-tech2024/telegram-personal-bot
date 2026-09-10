@@ -590,14 +590,47 @@ async def movie_download_callback(update: Update, context: ContextTypes.DEFAULT_
 
     direct_url = await scraper.resolve_redirect(original_url)
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬇️ Download Movie Now", url=direct_url)]
-    ])
+    user = update.effective_user
+    if user:
+        log_activity(user.id, user.username, user.first_name, "movie_download", selected_link['label'])
 
-    await status_msg.edit_text(
-        text=f"✅ <b>Direct download link resolved!</b>\n\nClick below to start downloading:\n<code>{direct_url}</code>",
-        parse_mode="HTML",
-        reply_markup=keyboard
-    )
+    # Check if direct link is a small video file (<50MB) for direct in-Telegram streaming
+    sent_in_telegram = False
+    if direct_url.lower().endswith(('.mp4', '.mkv', '.avi')) or 'sdm_downloads' in direct_url.lower():
+        try:
+            await status_msg.edit_text("⚡ <b>Downloading video directly to Telegram chat...</b>", parse_mode="HTML")
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as http_c:
+                head_resp = await http_c.head(direct_url)
+                content_len = int(head_resp.headers.get("content-length", 0))
+                if 0 < content_len < 52428800:  # < 50MB
+                    import os
+                    from modules.media_downloader import download_direct_file, cleanup_file
+                    file_path = await download_direct_file(direct_url)
+                    if file_path and os.path.exists(file_path):
+                        with open(file_path, "rb") as vid:
+                            await update.effective_chat.send_video(
+                                video=vid,
+                                caption=f"🎬 <b>{selected_link['label']}</b>\n\n<i>Fetched by Damisile AI</i>",
+                                parse_mode="HTML"
+                            )
+                        cleanup_file(file_path)
+                        await status_msg.delete()
+                        sent_in_telegram = True
+        except Exception as stream_e:
+            logger.warning(f"Direct Telegram video stream upload skipped: {stream_e}")
+
+    if not sent_in_telegram:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬇️ Direct HD Download / Stream", url=direct_url)],
+            [InlineKeyboardButton("🔗 High-Speed Mirror", url=original_url)]
+        ])
+
+        await status_msg.edit_text(
+            text=f"🎬 <b>{selected_link['label']}</b>\n\n"
+                 f"✅ <b>Direct HD Link Resolved!</b>\n\n"
+                 f"Click below to download or stream directly:\n<code>{direct_url}</code>",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
 
     log_download(direct_url, selected_link['label'], "movie")
