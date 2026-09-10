@@ -1,0 +1,18 @@
+# Python & Environment
+.env
+*.env
+__pycache__/
+*.pyc
+*.pyo
+
+# Database & Storage
+*.db
+*.sqlite
+bot_data.db
+downloads/
+
+# IDE & OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
