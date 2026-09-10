@@ -37,121 +37,32 @@ def _get_gemini_client():
     client = genai.Client(api_key=key)
     return client
 
+FALLBACK_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-8b', 'gemini-3.6-flash']
+
 def generate_ai_content(prompt: str) -> Optional[str]:
-    """Generates content using Gemini client with automatic key rotation on 429 quota exhaustion."""
-    for _ in range(max(1, gemini_keys.key_count)):
-        key = gemini_keys.current_key
-        if not key:
-            return None
-        try:
-            cl = genai.Client(api_key=key)
-            res = cl.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=prompt
-            )
-            if res and res.text:
-                return res.text
-        except Exception as e:
-            if any(kw in str(e).lower() for kw in ['429', 'quota', 'rate limit', 'resource exhausted']):
-                logger.warning("Quota hit in global_search, rotating key...")
-                gemini_keys.rotate()
-            else:
-                logger.error(f"Error generating AI content: {e}")
-                break
+    """Generates content using Gemini client with key rotation AND multi-model fallbacks on 429 quota exhaustion."""
+    for model_name in FALLBACK_MODELS:
+        for _ in range(max(1, gemini_keys.key_count)):
+            key = gemini_keys.current_key
+            if not key:
+                continue
+            try:
+                cl = genai.Client(api_key=key)
+                res = cl.models.generate_content(
+                    model=model_name,
+                    contents=prompt
+                )
+                if res and res.text:
+                    return res.text
+            except Exception as e:
+                if any(kw in str(e).lower() for kw in ['429', 'quota', 'rate limit', 'resource exhausted']):
+                    logger.warning(f"Quota hit on model {model_name}, rotating key...")
+                    gemini_keys.rotate()
+                else:
+                    logger.error(f"Error generating AI content on {model_name}: {e}")
+                    break
     return None
 
-@restricted
-async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = " ".join(context.args) if context.args else ""
-    if not query:
-        await update.message.reply_text("Please provide a search query. Usage: /search <query>")
-        return
-
-    user = update.effective_user
-    if user:
-        log_activity(user.id, user.username, user.first_name, "web_search", query)
-
-    status_msg = await update.message.reply_text('🔍 Searching...', parse_mode='HTML')
-    
-    try:
-        loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(None, lambda: DDGS().text(query, max_results=5))
-            
-        if not results:
-            await status_msg.edit_text("No results found for your query.")
-            log_search(query, "text", 0)
-            return
-
-        log_search(query, "text", len(results))
-
-        snippets = []
-        for r in results:
-            title = r.get('title', 'No title')
-            body = r.get('body', 'No description')
-            link = r.get('href', '')
-            snippets.append(f"Title: {title}\nSummary: {body}\nLink: {link}")
-
-        search_context = "\n\n".join(snippets)
-        prompt = (
-            f"You are a helpful search assistant. Based on the following web search results for the query '{query}', "
-            f"write a concise, informative summary. "
-            f"Include inline citations to the sources using HTML links (<a href='url'>Link text</a>). "
-            f"Format the output using ONLY these HTML tags: <b>, <i>, <a>, <code>, <pre>. "
-            f"Do not use markdown formatting like ** or *.\n\n"
-            f"Search Results:\n{search_context}"
-        )
-
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt
-        )
-
-        reply_text = f"<b>Search:</b> <i>{query}</i>\n\n{response.text}"
-        await status_msg.edit_text(reply_text, parse_mode='HTML', disable_web_page_preview=True)
-
-    except Exception as e:
-        logger.error(f"Error in search_command: {e}")
-        await status_msg.edit_text("An error occurred while searching.")
-
-@restricted
-async def image_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = " ".join(context.args) if context.args else ""
-    if not query:
-        await update.message.reply_text("Please provide a search query. Usage: /image <query>")
-        return
-
-    user = update.effective_user
-    if user:
-        log_activity(user.id, user.username, user.first_name, "image_search", query)
-
-    status_msg = await update.message.reply_text('🔍 Searching for images...', parse_mode='HTML')
-    
-    try:
-        loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(None, lambda: DDGS().images(query, max_results=4))
-
-        if not results:
-            await status_msg.edit_text("No images found for your query.")
-            log_search(query, "image", 0)
-            return
-
-        log_search(query, "image", len(results))
-        
-        media_group = []
-        for res in results:
-            image_url = res.get('image')
-            if image_url:
-                media_group.append(InputMediaPhoto(media=image_url))
-
-        if media_group:
-            await update.message.reply_media_group(media=media_group)
-            await status_msg.delete()
-        else:
-            await status_msg.edit_text("Could not retrieve images.")
-
-    except Exception as e:
-        logger.error(f"Error in image_search_command: {e}")
-        await status_msg.edit_text("An error occurred while searching for images.")
 
 def search_song_options(query: str) -> list[dict]:
     """Fetch top 5 song options for user interactive selection."""
@@ -160,6 +71,11 @@ def search_song_options(query: str) -> list[dict]:
         'extract_flat': 'in_playlist',
         'quiet': True,
         'no_warnings': True,
+        'nocheckcertificate': True,
+        'extractor_args': {'youtube': ['player_client=ios,mweb,android,web']},
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+        }
     }
     options = []
     try:
@@ -182,7 +98,7 @@ def search_song_options(query: str) -> list[dict]:
     return options
 
 def _download_audio_track(selected_url: str) -> dict:
-    """Download audio track from selected URL."""
+    """Download audio track from selected URL with YouTube bot-block bypass & fallback."""
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     ydl_opts = {
         'format': 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best',
@@ -191,22 +107,55 @@ def _download_audio_track(selected_url: str) -> dict:
         'no_warnings': True,
         'nocheckcertificate': True,
         'socket_timeout': 30,
-        'retries': 3,
-        'extractor_args': {'youtube': ['player_client=android']},
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(selected_url, download=True)
-        if 'entries' in info and info['entries']:
-            entry = info['entries'][0]
-        else:
-            entry = info
-        filename = ydl.prepare_filename(entry)
-        return {
-            'filepath': filename,
-            'title': entry.get('title', selected_url),
-            'uploader': entry.get('uploader', entry.get('artist', 'Damisile Music')),
-            'duration': entry.get('duration', 0)
+        'retries': 5,
+        'extractor_args': {
+            'youtube': ['player_client=ios,mweb,android,web']
+        },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
         }
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(selected_url, download=True)
+            if 'entries' in info and info['entries']:
+                entry = info['entries'][0]
+            else:
+                entry = info
+            filename = ydl.prepare_filename(entry)
+            return {
+                'filepath': filename,
+                'title': entry.get('title', selected_url),
+                'uploader': entry.get('uploader', entry.get('artist', 'Damisile Music')),
+                'duration': entry.get('duration', 0)
+            }
+    except Exception as e:
+        logger.error(f"yt-dlp audio download failed for {selected_url}: {e}")
+        # Web MP3 Audio Search Fallback Engine
+        try:
+            from duckduckgo_search import DDGS
+            import uuid
+            title_q = selected_url.split("watch?v=")[-1]
+            ddg_res = DDGS().text(f"{title_q} mp3 download audio", max_results=3)
+            if ddg_res:
+                for r in ddg_res:
+                    audio_url = r.get("href", "")
+                    if audio_url.endswith((".mp3", ".m4a", ".aac")) or "mp3" in audio_url.lower():
+                        out_path = os.path.join(DOWNLOAD_DIR, f"track_{uuid.uuid4().hex[:8]}.mp3")
+                        with httpx.Client(timeout=15.0, follow_redirects=True) as client_http:
+                            resp = client_http.get(audio_url)
+                            if resp.status_code == 200:
+                                with open(out_path, "wb") as f:
+                                    f.write(resp.content)
+                                return {
+                                    'filepath': out_path,
+                                    'title': title_q,
+                                    'uploader': 'Damisile Audio Engine',
+                                    'duration': 180
+                                }
+        except Exception as fb_e:
+            logger.error(f"Audio download fallback failed: {fb_e}")
+        raise e
 
 @restricted
 async def song_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

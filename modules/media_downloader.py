@@ -44,9 +44,13 @@ def _extract_formats_sync(url: str) -> dict:
     options = {
         'quiet': True,
         'no_warnings': True,
+        'nocheckcertificate': True,
         'extract_flat': False,
+        'extractor_args': {
+            'youtube': ['player_client=ios,mweb,android,web']
+        },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
         }
     }
     
@@ -98,9 +102,13 @@ def _download_media_sync(url: str, format_id: str = 'best', audio_only: bool = F
     options = {
         'quiet': True,
         'no_warnings': True,
+        'nocheckcertificate': True,
         'outtmpl': filename_template,
+        'extractor_args': {
+            'youtube': ['player_client=ios,mweb,android,web']
+        },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
         }
     }
     
