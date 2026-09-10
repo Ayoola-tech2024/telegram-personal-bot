@@ -279,8 +279,8 @@ class MovieScraper:
         results = []
         try:
             loop = asyncio.get_event_loop()
-            search_query = f"{query} site:nollysaucemovies.blogspot.com OR site:films.waploaded.com OR site:fzmovies.net OR site:1337x.to OR site:9jarocks.net OR site:thenkiri.com OR site:naijaprey.tv OR site:thenetnaija.com.ng"
-            ddg_res = await loop.run_in_executor(None, lambda: DDGS().text(search_query, max_results=6))
+            search_query = f"{query} movie download site:nollysaucemovies.blogspot.com OR site:films.waploaded.com OR site:fzmovies.net OR site:1337x.to OR site:9jarocks.net OR site:thenkiri.com OR site:naijaprey.tv OR site:thenetnaija.com.ng"
+            ddg_res = await loop.run_in_executor(None, lambda: DDGS().text(search_query, max_results=8))
             if ddg_res:
                 for idx, r in enumerate(ddg_res):
                     title = r.get("title", "")
@@ -296,6 +296,25 @@ class MovieScraper:
                             "page_url": href,
                             "source": domain.split(".")[0].title()
                         })
+            if not results:
+                # General web search fallback for rare or new movies
+                gen_query = f"{query} movie download"
+                ddg_gen = await loop.run_in_executor(None, lambda: DDGS().text(gen_query, max_results=6))
+                if ddg_gen:
+                    for idx, r in enumerate(ddg_gen):
+                        title = r.get("title", "")
+                        href = r.get("href", "")
+                        if title and href and "youtube.com" not in href:
+                            domain = urllib.parse.urlparse(href).netloc.replace("www.", "")
+                            results.append({
+                                "id": f"gw_{idx}",
+                                "title": title,
+                                "year": "",
+                                "quality": "HD",
+                                "poster_url": "",
+                                "page_url": href,
+                                "source": domain.split(".")[0].title()
+                            })
         except Exception as e:
             logger.error(f"Error in search_web_indexer: {e}")
         return results
@@ -352,12 +371,12 @@ class MovieScraper:
             filtered_results.sort(key=lambda x: x.get("score", 0), reverse=True)
             return filtered_results
 
-        if not merged_results:
-            web_results = await self.search_web_indexer(query)
-            if web_results:
-                return web_results
+        # If scrapers returned 0 items matching query words, invoke search_web_indexer fallback
+        web_results = await self.search_web_indexer(query)
+        if web_results:
+            return web_results
 
-        return merged_results
+        return []
 
     async def get_download_links(self, page_url: str) -> List[Dict[str, str]]:
         html = await self._fetch(page_url)

@@ -190,37 +190,60 @@ def clear_history(user_id: int):
 # --- Instant Keyword Intent Detector (0ms latency) ---
 def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
     """Fast regex-based intent classification without calling LLM (0ms latency)."""
-    lower = text.strip().lower()
+    raw_text = text.strip()
+    lower = raw_text.lower()
+
+    # Helper: Extract query inside quotes or colons if present (e.g. "sailors song", : sailor's song :)
+    def extract_delimited(t: str) -> Optional[str]:
+        # Colon-delimited e.g. : sailor's song :
+        colon_m = re.search(r':\s*([^:]+)\s*:', t)
+        if colon_m and len(colon_m.group(1).strip()) >= 2:
+            return colon_m.group(1).strip()
+        # Quote-delimited e.g. "sailors song" or 'sailors song'
+        quote_m = re.search(r'["\'\“\”\‘\’`]+([^"\'\“\”\‘\’`]+)["\'\“\”\‘\’`]+', t)
+        if quote_m and len(quote_m.group(1).strip()) >= 2:
+            return quote_m.group(1).strip()
+        return None
+
+    delimited = extract_delimited(raw_text)
 
     # 1. LYRICS Intent
     if "lyrics" in lower or "words of" in lower or "words to" in lower:
+        if delimited:
+            return ("lyrics", delimited)
         clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|get\s+|find\s+|fetch\s+|show\s+me\s+)+', '', lower)
         clean = re.sub(r'^(?:the\s+)?lyrics\s+(?:of|for|to)?\s*', '', clean)
-        clean = re.sub(r'\s+lyrics$', '', clean).strip(" '\"`\t\r\n")
+        clean = clean.strip(" '\"`\t\r\n:")
         if clean and len(clean) >= 2:
             return ("lyrics", clean)
 
     # 2. MOVIE / FILM Intent
     if any(kw in lower for kw in ["movie", "film", "cinema", "series", "season", "episode", "nollywood"]):
+        if delimited:
+            return ("movie", delimited)
         clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|download\s+|find\s+|get\s+|fetch\s+|search\s+for\s+|show\s+me\s+|watch\s+)+', '', lower)
         clean = re.sub(r'^(?:the\s+)?(?:movie|film|cinema|series|season|show|episode|nollywood)\s+(?:called\s+|titled\s+|named\s+|for\s+)?', '', clean)
-        clean = re.sub(r'\s+(?:movie|film|series|season|episode|mp4|hd)$', '', clean).strip(" '\"`\t\r\n")
+        clean = clean.strip(" '\"`\t\r\n:")
         if clean and len(clean) >= 2:
             return ("movie", clean)
 
     # 3. SONG / MUSIC Intent
     if any(kw in lower for kw in ["song", "music", "mp3", "audio", "track", "single", "album"]):
+        if delimited:
+            return ("song", delimited)
         clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|download\s+|find\s+|get\s+|fetch\s+|play\s+|listen\s+to\s+)+', '', lower)
         clean = re.sub(r'^(?:the\s+)?(?:song|music|audio|track|mp3|single|album)\s+(?:by\s+|called\s+|titled\s+|named\s+|for\s+)?', '', clean)
-        clean = re.sub(r'\s+(?:song|music|audio|mp3|track)$', '', clean).strip(" '\"`\t\r\n")
+        clean = clean.strip(" '\"`\t\r\n:")
         if clean and len(clean) >= 2:
             return ("song", clean)
 
     # 4. PDF / BOOK Intent
     if any(kw in lower for kw in ["pdf", "book", "ebook", "document", "filetype:pdf"]):
+        if delimited:
+            return ("pdf", delimited)
         clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|download\s+|find\s+|get\s+|fetch\s+|search\s+for\s+)+', '', lower)
         clean = re.sub(r'^(?:the\s+)?(?:pdf|book|ebook|document)\s+(?:on|about|for|of)?\s*', '', clean)
-        clean = re.sub(r'\s+(?:pdf|book|ebook|file)$', '', clean).strip(" '\"`\t\r\n")
+        clean = clean.strip(" '\"`\t\r\n:")
         if clean and len(clean) >= 2:
             return ("pdf", clean)
 
@@ -233,18 +256,23 @@ def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
     # 6. NEWS Intent
     if "news" in lower or "headlines" in lower:
         clean = re.sub(r'^(?:get\s+|show\s+|fetch\s+|latest\s+|top\s+)?news\s+(?:in|about|for|on)?\s*', '', lower)
-        clean = re.sub(r'\s+news$', '', clean).strip()
+        clean = clean.strip()
         return ("news", clean or "top breaking headlines")
 
     # 7. IMAGE / PHOTO Intent
     if any(kw in lower for kw in ["image", "photo", "picture", "wallpaper"]):
+        if delimited:
+            return ("image", delimited)
         clean = re.sub(r'^(?:get\s+|show\s+|fetch\s+|search\s+for\s+)?(?:image|photo|picture|wallpaper)\s+(?:of|for)?\s*', '', lower)
+        clean = clean.strip(" '\"`\t\r\n:")
         if clean and len(clean) >= 2:
             return ("image", clean)
 
     # Direct "download <title>" or "find <title>" or "get <title>" fallback (defaults to movie/media)
     if lower.startswith("download ") or lower.startswith("get ") or lower.startswith("find "):
-        clean = re.sub(r'^(?:download|get|find|fetch)\s+(?:the\s+)?', '', lower).strip()
+        if delimited:
+            return ("movie", delimited)
+        clean = re.sub(r'^(?:download|get|find|fetch)\s+(?:the\s+)?', '', lower).strip(" '\"`\t\r\n:")
         if clean and len(clean) >= 2:
             return ("movie", clean)
 

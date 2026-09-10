@@ -155,7 +155,8 @@ async def image_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 def search_song_options(query: str) -> list[dict]:
     """Fetch top 5 song options for user interactive selection."""
-    search_query = f"ytsearch5:{query} audio"
+    clean_q = query.strip(" '\"`\t\r\n:")
+    search_query = f"ytsearch5:{clean_q}"
     ydl_opts_meta = {
         'extract_flat': 'in_playlist',
         'quiet': True,
@@ -172,18 +173,39 @@ def search_song_options(query: str) -> list[dict]:
             info = ydl.extract_info(search_query, download=False)
             entries = info.get('entries', []) if info else []
             for idx, entry in enumerate(entries[:5]):
-                title = entry.get('title', f"Track {idx+1}")
-                uploader = entry.get('uploader', entry.get('channel', 'Artist'))
-                vid_id = entry.get('id', '')
-                url = entry.get('url') or f"https://www.youtube.com/watch?v={vid_id}"
-                options.append({
-                    'id': vid_id,
-                    'title': title,
-                    'uploader': uploader,
-                    'url': url
-                })
+                if entry:
+                    title = entry.get('title', f"Track {idx+1}")
+                    uploader = entry.get('uploader', entry.get('channel', 'Artist'))
+                    vid_id = entry.get('id', '')
+                    url = entry.get('url') or f"https://www.youtube.com/watch?v={vid_id}"
+                    options.append({
+                        'id': vid_id,
+                        'title': title,
+                        'uploader': uploader,
+                        'url': url
+                    })
     except Exception as e:
         logger.error(f"Error fetching song options for {query}: {e}")
+
+    # Fallback to DuckDuckGo YouTube video search if yt-dlp flat search returns 0 items
+    if not options:
+        try:
+            ddg_res = DDGS().text(f"{clean_q} song site:youtube.com/watch", max_results=5)
+            if ddg_res:
+                for idx, r in enumerate(ddg_res):
+                    href = r.get("href", "")
+                    title = r.get("title", "").replace("- YouTube", "").strip()
+                    if "watch?v=" in href:
+                        vid_id = href.split("watch?v=")[-1].split("&")[0]
+                        options.append({
+                            'id': vid_id,
+                            'title': title or f"Track {idx+1}",
+                            'uploader': 'YouTube Music',
+                            'url': f"https://www.youtube.com/watch?v={vid_id}"
+                        })
+        except Exception as fb_e:
+            logger.error(f"DuckDuckGo YouTube fallback failed for {query}: {fb_e}")
+
     return options
 
 def _download_audio_track(selected_url: str) -> dict:
