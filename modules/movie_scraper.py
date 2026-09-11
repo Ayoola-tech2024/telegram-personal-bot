@@ -23,7 +23,7 @@ HEADERS = {
 class MovieScraper:
     async def _fetch(self, url: str) -> Optional[str]:
         try:
-            async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=3.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True, timeout=8.0, verify=False) as client:
                 response = await client.get(url)
                 if response.status_code == 200:
                     return response.text
@@ -45,7 +45,7 @@ class MovieScraper:
         for a in a_tags:
             href = a["href"]
             title = a.text.strip()
-            if "/videodownload/" in href and href not in seen:
+            if "/videodownload/" in href and "/category/" not in href and href not in seen:
                 if not title:
                     title = href.split("/")[-1].replace(".html", "").replace("-", " ").title()
 
@@ -108,7 +108,7 @@ class MovieScraper:
         for a in a_tags:
             href = a["href"]
             title = a.text.strip()
-            if "naijaprey.tv/" in href and href.count("/") >= 4 and href not in seen:
+            if "naijaprey.tv/" in href and href.count("/") >= 4 and "/download-movies-" not in href and href not in seen:
                 if title and len(title) > 3 and not title.isdigit() and title != "[…]":
                     seen.add(href)
                     year_match = re.search(r"\b(19|20)\d{2}\b", title)
@@ -138,7 +138,7 @@ class MovieScraper:
         for a in a_tags:
             href = a["href"]
             title = a.text.strip()
-            if "thenetnaija.com.ng/" in href and href.count("/") >= 4 and href not in seen:
+            if "thenetnaija.com.ng/" in href and href.count("/") >= 4 and "/author/" not in href and "/category/" not in href and href not in seen:
                 if title and len(title) > 3 and not title.isdigit() and title != "[…]":
                     seen.add(href)
                     year_match = re.search(r"\b(19|20)\d{2}\b", title)
@@ -155,7 +155,7 @@ class MovieScraper:
         return results[:8]
 
     async def search_seriezloaded(self, query: str) -> List[Dict[str, Any]]:
-        url = f"https://www.seriezloaded.com.ng/?s={urllib.parse.quote(query)}"
+        url = f"https://seriezloaded.tv/?s={urllib.parse.quote(query)}"
         html = await self._fetch(url)
         results = []
         if not html:
@@ -168,7 +168,7 @@ class MovieScraper:
         for a in a_tags:
             href = a["href"]
             title = a.text.strip()
-            if "seriezloaded" in href and href.count("/") >= 4 and href not in seen:
+            if "seriezloaded" in href and href.count("/") >= 4 and "/category/" not in href and href not in seen:
                 if title and len(title) > 3 and title != "[…]":
                     seen.add(href)
                     year_match = re.search(r"\b(19|20)\d{2}\b", title)
@@ -274,12 +274,48 @@ class MovieScraper:
                     })
         return results[:8]
 
+    async def search_naijavault(self, query: str) -> List[Dict[str, Any]]:
+        """Search NaijaVault.com for Nollywood and global HD movies."""
+        clean_q = re.sub(r'[^a-zA-Z0-9\s]', '', query).strip().replace(" ", "-").lower()
+        url = f"https://www.naijavault.com/search/{clean_q}/"
+        html = await self._fetch(url)
+        results = []
+        if not html:
+            return results
+
+        soup = BeautifulSoup(html, "html.parser")
+        a_tags = soup.find_all("a", href=True)
+        seen = set()
+        skip_badges = {"movies", "series", "kdrama", "nollywood", "+18 movies", "movie trailers", "drama", "latest movie", "read more"}
+
+        for a in a_tags:
+            href = a["href"]
+            title = a.text.strip()
+            if "naijavault.com/" in href and href not in seen:
+                if not any(skip in href for skip in ["/category/", "/tag/", "/contact/", "/search/", "/page/", "?s="]):
+                    if title and len(title) > 3 and not title.isdigit():
+                        if title.lower() in skip_badges:
+                            continue
+                        seen.add(href)
+                        year_match = re.search(r"\b(19|20)\d{2}\b", title)
+                        year = year_match.group(0) if year_match else ""
+                        results.append({
+                            "id": f"nv_{len(results)}",
+                            "title": title,
+                            "year": year,
+                            "quality": "HD",
+                            "poster_url": "",
+                            "page_url": href,
+                            "source": "NaijaVault"
+                        })
+        return results[:8]
+
     async def search_web_indexer(self, query: str) -> List[Dict[str, Any]]:
         """Index results across user's movie list via web search engine."""
         results = []
         try:
             loop = asyncio.get_event_loop()
-            search_query = f"{query} movie download site:nollysaucemovies.blogspot.com OR site:films.waploaded.com OR site:fzmovies.net OR site:1337x.to OR site:9jarocks.net OR site:thenkiri.com OR site:naijaprey.tv OR site:thenetnaija.com.ng"
+            search_query = f"{query} movie download site:naijavault.com OR site:nollysaucemovies.blogspot.com OR site:films.waploaded.com OR site:fzmovies.net OR site:1337x.to OR site:9jarocks.net OR site:thenkiri.com OR site:naijaprey.tv OR site:thenetnaija.com.ng"
             ddg_res = await loop.run_in_executor(None, lambda: DDGS().text(search_query, max_results=8))
             if ddg_res:
                 for idx, r in enumerate(ddg_res):
@@ -321,6 +357,7 @@ class MovieScraper:
 
     async def search_all(self, query: str) -> List[Dict[str, Any]]:
         tasks = [
+            self.search_naijavault(query),
             self.search_9jarocks(query),
             self.search_thenkiri(query),
             self.search_naijaprey(query),
@@ -334,7 +371,7 @@ class MovieScraper:
         
         async def run_fast(coro):
             try:
-                return await asyncio.wait_for(coro, timeout=2.5)
+                return await asyncio.wait_for(coro, timeout=8.0)
             except Exception:
                 return []
 

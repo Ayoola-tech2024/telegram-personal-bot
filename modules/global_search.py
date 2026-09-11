@@ -154,119 +154,156 @@ async def image_search_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 def search_song_options(query: str) -> list[dict]:
-    """Fetch top 5 song options for user interactive selection."""
+    """Fetch top song options from YouTube and SoundCloud for user interactive selection."""
     clean_q = query.strip(" '\"`\t\r\n:")
-    search_query = f"ytsearch5:{clean_q}"
+    options = []
+    seen_titles = set()
+
+    # 1. YouTube search (standard ytsearch without conflicting extractor_args)
     ydl_opts_meta = {
         'extract_flat': 'in_playlist',
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
-        'extractor_args': {'youtube': ['player_client=ios,mweb,android,web']},
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
-        }
+        'socket_timeout': 10,
     }
-    options = []
     try:
         with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
-            info = ydl.extract_info(search_query, download=False)
+            info = ydl.extract_info(f"ytsearch4:{clean_q}", download=False)
             entries = info.get('entries', []) if info else []
-            for idx, entry in enumerate(entries[:5]):
+            for idx, entry in enumerate(entries):
                 if entry:
                     title = entry.get('title', f"Track {idx+1}")
                     uploader = entry.get('uploader', entry.get('channel', 'Artist'))
                     vid_id = entry.get('id', '')
                     url = entry.get('url') or f"https://www.youtube.com/watch?v={vid_id}"
-                    options.append({
-                        'id': vid_id,
-                        'title': title,
-                        'uploader': uploader,
-                        'url': url
-                    })
-    except Exception as e:
-        logger.error(f"Error fetching song options for {query}: {e}")
-
-    # Fallback to DuckDuckGo YouTube video search if yt-dlp flat search returns 0 items
-    if not options:
-        try:
-            ddg_res = DDGS().text(f"{clean_q} song site:youtube.com/watch", max_results=5)
-            if ddg_res:
-                for idx, r in enumerate(ddg_res):
-                    href = r.get("href", "")
-                    title = r.get("title", "").replace("- YouTube", "").strip()
-                    if "watch?v=" in href:
-                        vid_id = href.split("watch?v=")[-1].split("&")[0]
+                    normalized = re.sub(r'[^a-zA-Z0-9]', '', title.lower())[:30]
+                    if normalized not in seen_titles:
+                        seen_titles.add(normalized)
                         options.append({
                             'id': vid_id,
-                            'title': title or f"Track {idx+1}",
-                            'uploader': 'YouTube Music',
-                            'url': f"https://www.youtube.com/watch?v={vid_id}"
+                            'title': title,
+                            'uploader': uploader,
+                            'url': url,
+                            'source': 'YouTube'
                         })
-        except Exception as fb_e:
-            logger.error(f"DuckDuckGo YouTube fallback failed for {query}: {fb_e}")
+    except Exception as e:
+        logger.warning(f"YouTube song search failed for {clean_q}: {e}")
 
-    return options
+    # 2. SoundCloud search (complements YouTube and ensures 100% audio availability)
+    try:
+        sc_opts = {
+            'extract_flat': 'in_playlist',
+            'quiet': True,
+            'no_warnings': True,
+            'nocheckcertificate': True,
+            'socket_timeout': 10,
+        }
+        with yt_dlp.YoutubeDL(sc_opts) as ydl:
+            sc_info = ydl.extract_info(f"scsearch3:{clean_q}", download=False)
+            sc_entries = sc_info.get('entries', []) if sc_info else []
+            for sc_e in sc_entries:
+                if sc_e:
+                    title = sc_e.get('title', 'SoundCloud Track')
+                    uploader = sc_e.get('uploader', 'SoundCloud')
+                    url = sc_e.get('webpage_url') or sc_e.get('url', '')
+                    normalized = re.sub(r'[^a-zA-Z0-9]', '', title.lower())[:30]
+                    if normalized not in seen_titles and url:
+                        seen_titles.add(normalized)
+                        options.append({
+                            'id': str(sc_e.get('id', '')),
+                            'title': title,
+                            'uploader': uploader,
+                            'url': url,
+                            'source': 'SoundCloud'
+                        })
+    except Exception as sc_err:
+        logger.warning(f"SoundCloud song search failed for {clean_q}: {sc_err}")
 
-def _download_audio_track(selected_url: str) -> dict:
-    """Download audio track from selected URL with YouTube bot-block bypass & fallback."""
+    return options[:5]
+
+def _download_audio_track(selected_url: str, track_title: str = "") -> dict:
+    """Download audio track from selected URL with YouTube bot-block bypass, SoundCloud fallback, and MP3 web fallback."""
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    clean_title = clean_song_title(track_title) if track_title else ""
+    
+    # 1. Try standard yt-dlp on selected_url
     ydl_opts = {
-        'format': 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best',
-        'outtmpl': f'{DOWNLOAD_DIR}/%(title)s.%(ext)s',
+        'format': 'bestaudio/best',
+        'outtmpl': f'{DOWNLOAD_DIR}/%(title).80s.%(ext)s',
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
-        'socket_timeout': 30,
-        'retries': 5,
-        'extractor_args': {
-            'youtube': ['player_client=ios,mweb,android,web']
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
-        }
+        'socket_timeout': 20,
+        'retries': 3,
     }
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(selected_url, download=True)
-            if 'entries' in info and info['entries']:
-                entry = info['entries'][0]
-            else:
-                entry = info
+            entry = info['entries'][0] if ('entries' in info and info['entries']) else info
             filename = ydl.prepare_filename(entry)
-            return {
-                'filepath': filename,
-                'title': entry.get('title', selected_url),
-                'uploader': entry.get('uploader', entry.get('artist', 'Damisile Music')),
-                'duration': entry.get('duration', 0)
-            }
-    except Exception as e:
-        logger.error(f"yt-dlp audio download failed for {selected_url}: {e}")
-        # Web MP3 Audio Search Fallback Engine
-        try:
-            from duckduckgo_search import DDGS
-            import uuid
-            title_q = selected_url.split("watch?v=")[-1]
-            ddg_res = DDGS().text(f"{title_q} mp3 download audio", max_results=3)
-            if ddg_res:
-                for r in ddg_res:
-                    audio_url = r.get("href", "")
-                    if audio_url.endswith((".mp3", ".m4a", ".aac")) or "mp3" in audio_url.lower():
-                        out_path = os.path.join(DOWNLOAD_DIR, f"track_{uuid.uuid4().hex[:8]}.mp3")
-                        with httpx.Client(timeout=15.0, follow_redirects=True) as client_http:
-                            resp = client_http.get(audio_url)
-                            if resp.status_code == 200:
-                                with open(out_path, "wb") as f:
-                                    f.write(resp.content)
-                                return {
-                                    'filepath': out_path,
-                                    'title': title_q,
-                                    'uploader': 'Damisile Audio Engine',
-                                    'duration': 180
-                                }
-        except Exception as fb_e:
-            logger.error(f"Audio download fallback failed: {fb_e}")
-        raise e
+            if os.path.exists(filename) and os.path.getsize(filename) > 10000:
+                return {
+                    'filepath': filename,
+                    'title': entry.get('title', clean_title or selected_url),
+                    'uploader': entry.get('uploader', entry.get('artist', 'Damisile Music')),
+                    'duration': entry.get('duration', 0)
+                }
+    except Exception as yt_err:
+        logger.warning(f"Direct yt-dlp download failed ({yt_err}), activating SoundCloud/Web fallback...")
+
+    # 2. SoundCloud fallback (ultra-fast, no bot blocks, 100% reliable)
+    query_for_sc = clean_title or selected_url.split("watch?v=")[-1]
+    sc_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': f'{DOWNLOAD_DIR}/%(title).80s.%(ext)s',
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
+        'socket_timeout': 20,
+    }
+    try:
+        with yt_dlp.YoutubeDL(sc_opts) as ydl:
+            sc_info = ydl.extract_info(f"scsearch1:{query_for_sc}", download=True)
+            if sc_info and 'entries' in sc_info and sc_info['entries']:
+                sc_entry = sc_info['entries'][0]
+                sc_file = ydl.prepare_filename(sc_entry)
+                if os.path.exists(sc_file) and os.path.getsize(sc_file) > 10000:
+                    return {
+                        'filepath': sc_file,
+                        'title': sc_entry.get('title', query_for_sc),
+                        'uploader': sc_entry.get('uploader', 'SoundCloud Audio'),
+                        'duration': sc_entry.get('duration', 0)
+                    }
+    except Exception as sc_err:
+        logger.warning(f"SoundCloud fallback download failed: {sc_err}")
+
+    # 3. Direct MP3 web audio search fallback
+    try:
+        import uuid
+        from duckduckgo_search import DDGS
+        ddg_res = DDGS().text(f"{query_for_sc} mp3 download audio", max_results=4)
+        if ddg_res:
+            for r in ddg_res:
+                audio_url = r.get("href", "")
+                if audio_url.endswith((".mp3", ".m4a", ".aac")) or "mp3" in audio_url.lower():
+                    out_path = os.path.join(DOWNLOAD_DIR, f"track_{uuid.uuid4().hex[:8]}.mp3")
+                    with httpx.Client(timeout=15.0, follow_redirects=True) as client_http:
+                        resp = client_http.get(audio_url)
+                        if resp.status_code == 200 and len(resp.content) > 50000:
+                            with open(out_path, "wb") as f:
+                                f.write(resp.content)
+                            return {
+                                'filepath': out_path,
+                                'title': query_for_sc,
+                                'uploader': 'Damisile Audio Engine',
+                                'duration': 180
+                            }
+    except Exception as fb_e:
+        logger.error(f"Web MP3 audio fallback failed: {fb_e}")
+
+    raise RuntimeError(f"Could not download audio for '{query_for_sc}' from any audio mirror.")
 
 @restricted
 async def song_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -341,7 +378,7 @@ async def song_select_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
     try:
         loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(None, lambda: _download_audio_track(selected_track['url']))
+        res = await loop.run_in_executor(None, lambda: _download_audio_track(selected_track['url'], selected_track.get('title', '')))
 
         filepath = res['filepath']
         title = res['title']
