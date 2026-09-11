@@ -446,7 +446,8 @@ class MovieScraper:
                 # Must match primary word OR match multiple query words
                 matches = sum(1 for w in query_words if w in t_clean or w in p_clean)
                 if primary_word in t_clean or primary_word in p_clean or matches >= max(1, len(query_words) - 1):
-                    res["score"] = matches + (5 if primary_word in t_clean else 0)
+                    source_bonus = 2 if res.get("source") in ["NaijaVault", "SeriezLoaded", "Thenkiri", "NetNaija", "9jaRocks"] else 0
+                    res["score"] = matches + (5 if primary_word in t_clean else 0) + source_bonus
                     filtered_results.append(res)
 
         if filtered_results:
@@ -490,6 +491,10 @@ class MovieScraper:
             ])
 
             if is_file_server:
+                if href_lower.endswith(".srt") or "subtitle" in text_lower or "subtitle" in href_lower:
+                    links.append({"label": "💬 English Subtitles (SRT)", "url": href})
+                    continue
+
                 label = text if (len(text) > 3 and "download" in text_lower) else "DOWNLOAD SERVER"
                 if "server 1" in text_lower or "loadedfiles" in href_lower:
                     label = "🚀 SERVER 1 (Direct HD)"
@@ -497,6 +502,8 @@ class MovieScraper:
                     label = "🚀 SERVER 2 (Fast Mirror)"
                 elif "np-downloader" in href_lower or "dldownload" in href_lower:
                     label = "⚡ HIGH-SPEED SERVER"
+                elif "send.cm" in href_lower:
+                    label = "⚡ HIGH-SPEED MIRROR (Send.cm)"
                 else:
                     label = f"💾 {label}"
 
@@ -519,28 +526,79 @@ class MovieScraper:
 
         return unique_links
 
-    async def resolve_redirect(self, url: str) -> str:
+    async def resolve_redirect(self, url: str) -> Optional[str]:
+        """Follow redirect chains, meta refresh, intermediate download landing pages, and detect dead 404s."""
         current_url = url
         try:
             async with httpx.AsyncClient(headers=HEADERS, max_redirects=10, follow_redirects=True, timeout=20.0, verify=False) as client:
-                response = await client.get(current_url)
-                current_url = str(response.url)
-                html = response.text
+                for hop in range(4):
+                    response = await client.get(current_url)
+                    final_url = str(response.url)
+                    html = response.text
+                    html_lower = html.lower()
 
-                meta_refresh = re.search(r'<meta[^>]+http-equiv=["\']refresh["\'][^>]+content=["\']\d+;\s*url=([^"\']+)["\']', html, re.IGNORECASE)
-                if meta_refresh:
-                    next_url = meta_refresh.group(1).strip()
-                    current_url = urllib.parse.urljoin(current_url, next_url)
+                    # Detect NP-Downloader or host 404 / deleted file errors
+                    if response.status_code in (404, 410, 502) or any(p in html_lower for p in [
+                        "404: page not found",
+                        "the page you are looking for cannot be found or has been deleted",
+                        "page not found &#8211; np-downloader",
+                        "page not found – np-downloader",
+                        "file has been deleted",
+                        "file has been removed",
+                        "file not found"
+                    ]):
+                        logger.warning(f"Dead 404 link detected at {final_url}")
+                        return None
 
-                js_redirect = re.search(r'window\.location\.(?:href|replace)\s*=\s*["\']([^"\']+)["\']', html)
-                if js_redirect:
-                    next_url = js_redirect.group(1).strip()
-                    current_url = urllib.parse.urljoin(current_url, next_url)
+                    # 1. Meta refresh tag
+                    meta_refresh = re.search(r'<meta[^>]+http-equiv=["\']refresh["\'][^>]+content=["\']\d+;\s*url=([^"\']+)["\']', html, re.IGNORECASE)
+                    if meta_refresh:
+                        next_url = meta_refresh.group(1).strip()
+                        current_url = urllib.parse.urljoin(final_url, next_url)
+                        continue
 
-                soup = BeautifulSoup(html, "html.parser")
-                dl_a = soup.find("a", id=re.compile(r'download', re.I)) or soup.find("a", class_=re.compile(r'download', re.I))
-                if dl_a and dl_a.get("href"):
-                    current_url = urllib.parse.urljoin(current_url, dl_a["href"])
+                    # 2. JavaScript location redirect
+                    js_redirect = re.search(r'window\.location\.(?:href|replace)\s*=\s*["\']([^"\']+)["\']', html)
+                    if js_redirect:
+                        next_url = js_redirect.group(1).strip()
+                        current_url = urllib.parse.urljoin(final_url, next_url)
+                        continue
+
+                    # 3. Intermediate download page links (Wildshare, Send.cm, LoadedFiles, GoFile, Mega, etc.)
+                    soup = BeautifulSoup(html, "html.parser")
+                    target_a = None
+                    for a in soup.find_all("a", href=True):
+                        href = a["href"].strip()
+                        if href.startswith("//"):
+                            href = "https:" + href
+                        elif not href.startswith("http"):
+                            href = urllib.parse.urljoin(final_url, href)
+
+                        h_lower = href.lower()
+                        t_lower = a.text.strip().lower()
+
+                        if any(host in h_lower for host in ["wildshare.net", "send.cm", "loadedfiles.net", "gofile.io", "mediafire.com", "mega.nz", "downloadwella.com"]):
+                            target_a = href
+                            break
+                        if ("proceed" in t_lower or "download" in t_lower) and not any(skip in h_lower for skip in ["how-to", "privacy", "tag", "category", "tg", "telegram", "facebook", final_url.lower()]):
+                            if not target_a:
+                                target_a = href
+
+                    if target_a and target_a != current_url:
+                        current_url = target_a
+                        # If destination is a known direct file hosting domain, do a quick validation check
+                        if any(host in current_url.lower() for host in ["wildshare.net", "send.cm", "loadedfiles.net", "gofile.io", "mediafire.com", "mega.nz"]):
+                            try:
+                                chk = await client.get(current_url, timeout=10.0)
+                                if chk.status_code in (404, 410) or "404: page not found" in chk.text.lower():
+                                    return None
+                            except Exception:
+                                pass
+                            return current_url
+                        continue
+                    else:
+                        current_url = final_url
+                        break
 
         except Exception as e:
             logger.error(f"Error resolving redirect for {url}: {e}")
@@ -786,6 +844,61 @@ async def movie_download_callback(update: Update, context: ContextTypes.DEFAULT_
     )
 
     direct_url = await scraper.resolve_redirect(original_url)
+
+    # Auto-failover if the selected server is a dead 404 (common on NP-Downloader deleted files)
+    if not direct_url:
+        await status_msg.edit_text(
+            f"⚠️ <b>Selected server ({selected_link['label']}) was deleted or expired on host (404 Page Not Found).</b>\n\n"
+            f"<i>🔄 Auto-scanning alternative mirrors & portals for a live link...</i>",
+            parse_mode="HTML"
+        )
+
+        # 1. Try other links on this same post first
+        for alt_idx, alt_link in enumerate(links):
+            if alt_idx != index and not alt_link['url'].endswith('.srt'):
+                alt_res = await scraper.resolve_redirect(alt_link['url'])
+                if alt_res:
+                    direct_url = alt_res
+                    selected_link = alt_link
+                    break
+
+        # 2. If all links on this post are dead, search other portals
+        if not direct_url:
+            movie_results = context.user_data.get('movie_results', [])
+            movie_title = context.user_data.get('last_movie_query', '')
+            try:
+                m_idx = int(parts[1]) if len(parts) >= 2 else 0
+                if movie_results and m_idx < len(movie_results):
+                    movie_title = movie_results[m_idx].get('title', movie_title)
+            except Exception:
+                pass
+
+            if movie_title:
+                clean_title = re.sub(r'\(.*?\)|\[.*?\]', '', movie_title).strip()
+                alt_movies = await scraper.search_all(clean_title)
+                for alt_m in alt_movies:
+                    if alt_m.get('source') != 'NaijaPrey':
+                        alt_page_links = await scraper.get_download_links(alt_m['page_url'])
+                        for apl in alt_page_links:
+                            if not apl['url'].endswith('.srt'):
+                                cand = await scraper.resolve_redirect(apl['url'])
+                                if cand:
+                                    direct_url = cand
+                                    selected_link = {
+                                        'label': f"{apl['label']} [{alt_m['source']}]",
+                                        'url': apl['url']
+                                    }
+                                    break
+                    if direct_url:
+                        break
+
+    if not direct_url:
+        await status_msg.edit_text(
+            f"❌ <b>Download server expired / file deleted by host (NP-Downloader 404).</b>\n\n"
+            f"💡 <i>The host has purged this file from their servers. Please pick another title from the search results (like NaijaVault, SeriezLoaded, or NetNaija), or click <b>🔍 Search More Sites & Portals</b>!</i>",
+            parse_mode="HTML"
+        )
+        return
 
     user = update.effective_user
     if user:
