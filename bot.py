@@ -29,9 +29,10 @@ from modules.global_search import (
     song_search_command,
     lyrics_search_command,
     pdf_search_command,
-    movie_search_command,
     song_lyrics_callback,
     song_select_callback,
+    song_page_callback,
+    song_deep_callback,
 )
 from modules.movie_scraper import (
     movie_command,
@@ -220,6 +221,12 @@ async def set_bot_commands(application: Application):
     await application.bot.set_my_commands(commands)
 
 
+async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Silent response for pagination indicator clicks."""
+    if update.callback_query:
+        await update.callback_query.answer()
+
+
 def main():
     """Main bot setup and runner."""
     # Validate configuration
@@ -268,6 +275,9 @@ def main():
     app.add_handler(CallbackQueryHandler(converter_callback, pattern=r"^conv:"))
     app.add_handler(CallbackQueryHandler(song_lyrics_callback, pattern=r"^songlyrics:"))
     app.add_handler(CallbackQueryHandler(song_select_callback, pattern=r"^songselect:"))
+    app.add_handler(CallbackQueryHandler(song_page_callback, pattern=r"^songpage:"))
+    app.add_handler(CallbackQueryHandler(song_deep_callback, pattern=r"^songdeep:"))
+    app.add_handler(CallbackQueryHandler(noop_callback, pattern=r"^noop$"))
 
     # --- Register Message Handlers ---
     # Voice notes & audio messages

@@ -12,7 +12,7 @@ from telegram.ext import ContextTypes
 
 from config import logger, restricted, GEMINI_API_KEY, gemini_keys, DOWNLOAD_DIR
 from database import log_search, log_activity
-from modules.keyboards import search_type_keyboard
+from modules.keyboards import search_type_keyboard, song_results_keyboard
 
 try:
     client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
@@ -169,7 +169,7 @@ def search_song_options(query: str) -> list[dict]:
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
-            info = ydl.extract_info(f"ytsearch4:{clean_q}", download=False)
+            info = ydl.extract_info(f"ytsearch8:{clean_q}", download=False)
             entries = info.get('entries', []) if info else []
             for idx, entry in enumerate(entries):
                 if entry:
@@ -200,7 +200,7 @@ def search_song_options(query: str) -> list[dict]:
             'socket_timeout': 10,
         }
         with yt_dlp.YoutubeDL(sc_opts) as ydl:
-            sc_info = ydl.extract_info(f"scsearch3:{clean_q}", download=False)
+            sc_info = ydl.extract_info(f"scsearch6:{clean_q}", download=False)
             sc_entries = sc_info.get('entries', []) if sc_info else []
             for sc_e in sc_entries:
                 if sc_e:
@@ -220,7 +220,97 @@ def search_song_options(query: str) -> list[dict]:
     except Exception as sc_err:
         logger.warning(f"SoundCloud song search failed for {clean_q}: {sc_err}")
 
-    return options[:5]
+    return options
+
+def search_deep_song_options(query: str) -> list[dict]:
+    """Fetch additional audio tracks using extended SoundCloud search, query variations, and direct mp3 indexers."""
+    clean_q = query.strip(" '\"`\t\r\n:")
+    extra_options = []
+    seen = set()
+
+    # 1. Extended SoundCloud search with 'audio'
+    try:
+        sc_opts = {
+            'extract_flat': 'in_playlist',
+            'quiet': True,
+            'no_warnings': True,
+            'nocheckcertificate': True,
+            'socket_timeout': 10,
+        }
+        with yt_dlp.YoutubeDL(sc_opts) as ydl:
+            sc_info = ydl.extract_info(f"scsearch8:{clean_q} audio", download=False)
+            entries = sc_info.get('entries', []) if sc_info else []
+            for sc_e in entries:
+                if sc_e:
+                    title = sc_e.get('title', 'SoundCloud Track')
+                    uploader = sc_e.get('uploader', 'SoundCloud')
+                    url = sc_e.get('webpage_url') or sc_e.get('url', '')
+                    norm = re.sub(r'[^a-zA-Z0-9]', '', title.lower())[:30]
+                    if norm not in seen and url:
+                        seen.add(norm)
+                        extra_options.append({
+                            'id': str(sc_e.get('id', '')),
+                            'title': title,
+                            'uploader': uploader,
+                            'url': url,
+                            'source': 'SoundCloud'
+                        })
+    except Exception as e:
+        logger.warning(f"SoundCloud deep search failed: {e}")
+
+    # 2. YouTube official audio variation
+    try:
+        ydl_opts_yt = {
+            'extract_flat': 'in_playlist',
+            'quiet': True,
+            'no_warnings': True,
+            'nocheckcertificate': True,
+            'socket_timeout': 10,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts_yt) as ydl:
+            yt_info = ydl.extract_info(f"ytsearch6:{clean_q} official audio", download=False)
+            entries = yt_info.get('entries', []) if yt_info else []
+            for entry in entries:
+                if entry:
+                    title = entry.get('title', 'Track')
+                    uploader = entry.get('uploader', entry.get('channel', 'Artist'))
+                    vid_id = entry.get('id', '')
+                    url = entry.get('url') or f"https://www.youtube.com/watch?v={vid_id}"
+                    norm = re.sub(r'[^a-zA-Z0-9]', '', title.lower())[:30]
+                    if norm not in seen:
+                        seen.add(norm)
+                        extra_options.append({
+                            'id': vid_id,
+                            'title': title,
+                            'uploader': uploader,
+                            'url': url,
+                            'source': 'YouTube'
+                        })
+    except Exception as e:
+        logger.warning(f"YouTube deep search failed: {e}")
+
+    # 3. DuckDuckGo direct MP3 link search
+    try:
+        ddg_results = DDGS().text(f"{clean_q} mp3 download audio direct", max_results=6)
+        if ddg_results:
+            for idx, r in enumerate(ddg_results):
+                t = r.get('title', '')
+                href = r.get('href', '')
+                if t and href and not any(skip in href for skip in ["youtube.com", "facebook.com", "instagram.com"]):
+                    norm = re.sub(r'[^a-zA-Z0-9]', '', t.lower())[:30]
+                    if norm not in seen:
+                        seen.add(norm)
+                        extra_options.append({
+                            'id': f"ddg_{idx}",
+                            'title': t.replace("Download", "").replace("mp3", "").strip(),
+                            'uploader': 'Web Mirror',
+                            'url': href,
+                            'source': 'Web MP3'
+                        })
+    except Exception as e:
+        logger.warning(f"DDG MP3 deep search failed: {e}")
+
+    return extra_options
 
 def _download_audio_track(selected_url: str, track_title: str = "") -> dict:
     """Download audio track from selected URL with YouTube bot-block bypass, SoundCloud fallback, and MP3 web fallback."""
@@ -332,25 +422,114 @@ async def run_song_download(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             return
 
         import uuid
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         session_id = uuid.uuid4().hex[:8]
 
-        # Store options in user_data
+        # Store options and query in user_data
         context.user_data[f"song_options_{session_id}"] = options
+        context.user_data[f"song_query_{session_id}"] = query
 
-        buttons = []
-        for idx, opt in enumerate(options):
-            label = f"🎵 {idx+1}. {opt['title'][:40]}"
-            buttons.append([InlineKeyboardButton(label, callback_data=f"songselect:{session_id}:{idx}")])
-
-        keyboard = InlineKeyboardMarkup(buttons)
-        text = f"🎶 <b>Select track to download:</b>\n\nQuery: <i>{query}</i>"
+        total_pages = max(1, (len(options) + 4) // 5)
+        keyboard = song_results_keyboard(session_id, options, page=1, page_size=5)
+        text = (
+            f"🎶 <b>Select track to download:</b>\n\n"
+            f"Query: <i>{query}</i>\n"
+            f"<i>Page 1/{total_pages} • Found {len(options)} tracks</i>"
+        )
         await status_msg.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         log_search(query, "song", len(options))
 
     except Exception as e:
         logger.error(f"Error in run_song_download for {query}: {e}")
         await status_msg.edit_text(f"Failed to fetch song tracks: {str(e)}")
+
+async def song_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles song pagination buttons (⬅️ Prev, Next ➡️)."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data.split(':')
+    if len(data) < 3:
+        return
+
+    session_id = data[1]
+    page = int(data[2])
+
+    options = context.user_data.get(f"song_options_{session_id}", [])
+    query_text = context.user_data.get(f"song_query_{session_id}", "Track")
+
+    if not options:
+        await query.answer("Song session expired. Please search again.", show_alert=True)
+        return
+
+    total_pages = max(1, (len(options) + 4) // 5)
+    page = max(1, min(page, total_pages))
+
+    text = (
+        f"🎶 <b>Select track to download:</b>\n\n"
+        f"Query: <i>{query_text}</i>\n"
+        f"<i>Page {page}/{total_pages} • Found {len(options)} tracks</i>"
+    )
+    keyboard = song_results_keyboard(session_id, options, page=page, page_size=5)
+    try:
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Error updating song page: {e}")
+
+async def song_deep_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles '🔍 Search More Tracks & Audio Mirrors' button."""
+    query = update.callback_query
+    await query.answer("Searching alternative audio sources...")
+
+    data = query.data.split(':')
+    if len(data) < 2:
+        return
+
+    session_id = data[1]
+    options = context.user_data.get(f"song_options_{session_id}", [])
+    query_text = context.user_data.get(f"song_query_{session_id}", "")
+
+    if not query_text:
+        await query.answer("Search query expired. Please search again.", show_alert=True)
+        return
+
+    try:
+        await query.edit_message_text(
+            f"🔍 <b>Searching deeper for alternative versions & audio mirrors of '{query_text}'...</b>\n<i>Please wait a moment...</i>",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    loop = asyncio.get_event_loop()
+    extra_tracks = await loop.run_in_executor(None, lambda: search_deep_song_options(query_text))
+
+    seen_titles = {re.sub(r'[^a-zA-Z0-9]', '', opt['title'].lower())[:30] for opt in options}
+    seen_urls = {opt['url'] for opt in options}
+    added = 0
+    for t in extra_tracks:
+        norm = re.sub(r'[^a-zA-Z0-9]', '', t['title'].lower())[:30]
+        if norm not in seen_titles and t['url'] not in seen_urls:
+            options.append(t)
+            seen_titles.add(norm)
+            seen_urls.add(t['url'])
+            added += 1
+
+    context.user_data[f"song_options_{session_id}"] = options
+    total_pages = max(1, (len(options) + 4) // 5)
+
+    header = f"✅ <b>Added {added} new tracks!</b>" if added > 0 else f"🎶 <b>Deep search complete.</b>"
+    text = (
+        f"{header}\n\n"
+        f"Query: <i>{query_text}</i>\n"
+        f"<i>Page 1/{total_pages} • Total {len(options)} tracks available</i>\n\n"
+        f"Select track to download:"
+    )
+    keyboard = song_results_keyboard(session_id, options, page=1, page_size=5)
+
+    try:
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Error presenting deep song results: {e}")
 
 async def song_select_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles song track selection from interactive menu."""

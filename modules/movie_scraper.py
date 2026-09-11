@@ -355,6 +355,51 @@ class MovieScraper:
             logger.error(f"Error in search_web_indexer: {e}")
         return results
 
+    async def search_deep_indexer(self, query: str) -> List[Dict[str, Any]]:
+        """Extended deep search across international torrents, Nollywood forums, and streaming/download mirrors."""
+        results = []
+        try:
+            loop = asyncio.get_event_loop()
+            search_query = f"{query} full movie download site:yts.mx OR site:fzmovies.net OR site:toxicwap.com OR site:loadedfiles.com OR site:o2tvseries.com OR site:thenetnaija.net OR site:sabishare.com OR site:nkiri.com OR site:naijaloaded.com.ng"
+            ddg_res = await loop.run_in_executor(None, lambda: DDGS().text(search_query, max_results=12))
+            if ddg_res:
+                for idx, r in enumerate(ddg_res):
+                    title = r.get("title", "")
+                    href = r.get("href", "")
+                    if title and href and "youtube.com" not in href:
+                        domain = urllib.parse.urlparse(href).netloc.replace("www.", "")
+                        results.append({
+                            "id": f"deep_{idx}",
+                            "title": title.replace("Download", "").replace("Free", "").strip(),
+                            "year": "",
+                            "quality": "HD",
+                            "poster_url": "",
+                            "page_url": href,
+                            "source": domain.split(".")[0].title()
+                        })
+
+            if len(results) < 5:
+                alt_query = f"watch or download {query} movie free online"
+                ddg_alt = await loop.run_in_executor(None, lambda: DDGS().text(alt_query, max_results=8))
+                if ddg_alt:
+                    for idx, r in enumerate(ddg_alt):
+                        title = r.get("title", "")
+                        href = r.get("href", "")
+                        if title and href and not any(skip in href for skip in ["youtube.com", "facebook.com", "twitter.com", "x.com"]):
+                            domain = urllib.parse.urlparse(href).netloc.replace("www.", "")
+                            results.append({
+                                "id": f"alt_{idx}",
+                                "title": title,
+                                "year": "",
+                                "quality": "HD",
+                                "poster_url": "",
+                                "page_url": href,
+                                "source": domain.split(".")[0].title()
+                            })
+        except Exception as e:
+            logger.error(f"Error in search_deep_indexer: {e}")
+        return results
+
     async def search_all(self, query: str) -> List[Dict[str, Any]]:
         tasks = [
             self.search_naijavault(query),
@@ -535,15 +580,18 @@ async def run_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE, q
         return
 
     context.user_data['movie_results'] = results
+    context.user_data['last_movie_query'] = query
 
     first_movie = results[0]
+    total_pages = max(1, (len(results) + 4) // 5)
     text = (
         f"🎬 <b>{first_movie['title']}</b>\n"
         f"📅 Year: {first_movie.get('year', 'N/A')}\n"
         f"🔗 Source: {first_movie['source']}\n\n"
-        f"<i>Select movie or click below to extract download servers:</i>"
+        f"<i>Page 1/{total_pages} • Found {len(results)} movies matching '{query}'</i>\n"
+        f"<i>Select a movie or navigate pages below:</i>"
     )
-    keyboard = movie_results_keyboard(results)
+    keyboard = movie_results_keyboard(results, page=1, page_size=5)
 
     try:
         if first_movie.get('poster_url'):
@@ -573,26 +621,104 @@ async def movie_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = query.data
 
+    if data == "noop":
+        return
+
     if data.startswith("movie_page:"):
-        index = int(data.split(":")[1])
+        page = int(data.split(":")[1])
         results = context.user_data.get('movie_results', [])
-        if not results or index >= len(results) or index < 0:
+        query_text = context.user_data.get('last_movie_query', 'Movie')
+        if not results:
+            await query.answer("Movie session expired. Please search again.", show_alert=True)
             return
 
-        movie = results[index]
-        text = f"🎬 <b>{movie['title']}</b>\n📅 Year: {movie.get('year', 'N/A')}\n🔗 Source: {movie['source']}"
-        keyboard = movie_results_keyboard(results)
+        total_pages = max(1, (len(results) + 4) // 5)
+        page = max(1, min(page, total_pages))
+
+        start_idx = (page - 1) * 5
+        movie = results[start_idx] if start_idx < len(results) else results[0]
+        text = (
+            f"🎬 <b>{movie['title']}</b>\n"
+            f"📅 Year: {movie.get('year', 'N/A')}\n"
+            f"🔗 Source: {movie['source']}\n\n"
+            f"<i>Page {page}/{total_pages} • Found {len(results)} movies matching '{query_text}'</i>\n"
+            f"<i>Select a movie or navigate pages below:</i>"
+        )
+        keyboard = movie_results_keyboard(results, page=page, page_size=5)
 
         try:
             if query.message.photo and movie.get('poster_url'):
-                await query.edit_message_media(
-                    media=InputMediaPhoto(media=movie['poster_url'], caption=text, parse_mode="HTML"),
-                    reply_markup=keyboard
-                )
+                try:
+                    await query.edit_message_media(
+                        media=InputMediaPhoto(media=movie['poster_url'], caption=text, parse_mode="HTML"),
+                        reply_markup=keyboard
+                    )
+                    return
+                except Exception:
+                    pass
+
+            if query.message.photo:
+                await query.edit_message_caption(caption=text, parse_mode="HTML", reply_markup=keyboard)
             else:
                 await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
         except Exception as e:
             logger.error(f"Error updating movie page: {e}")
+
+    elif data.startswith("movie_deep:"):
+        query_text = context.user_data.get('last_movie_query', '')
+        if not query_text:
+            await query.answer("Search query expired. Please run /movie again.", show_alert=True)
+            return
+
+        status_text = (
+            f"🔍 <b>Searching 10+ additional global & web mirrors for '{query_text}'...</b>\n"
+            f"<i>Please wait a moment...</i>"
+        )
+        try:
+            if query.message.photo:
+                await query.edit_message_caption(caption=status_text, parse_mode="HTML")
+            else:
+                await query.edit_message_text(status_text, parse_mode="HTML")
+        except Exception:
+            pass
+
+        new_results = await scraper.search_deep_indexer(query_text)
+        results = context.user_data.get('movie_results', [])
+        seen_urls = {m.get('page_url') for m in results}
+        seen_titles = {re.sub(r'[^a-zA-Z0-9]', '', m.get('title', '').lower()) for m in results}
+
+        added = 0
+        for m in new_results:
+            clean_t = re.sub(r'[^a-zA-Z0-9]', '', m.get('title', '').lower())
+            if m.get('page_url') not in seen_urls and clean_t not in seen_titles:
+                results.append(m)
+                seen_urls.add(m.get('page_url'))
+                seen_titles.add(clean_t)
+                added += 1
+
+        context.user_data['movie_results'] = results
+        total_pages = max(1, (len(results) + 4) // 5)
+
+        first_movie = results[0] if results else None
+        if added > 0:
+            header_text = f"✅ <b>Added {added} new movie portal matches!</b>"
+        else:
+            header_text = f"🎬 <b>Deep search complete.</b>"
+
+        text = (
+            f"{header_text}\n"
+            f"<i>Page 1/{total_pages} • Total {len(results)} movies found for '{query_text}'</i>\n\n"
+            f"<i>Select a movie or navigate pages below:</i>"
+        )
+        keyboard = movie_results_keyboard(results, page=1, page_size=5)
+
+        try:
+            if query.message.photo:
+                await query.edit_message_caption(caption=text, parse_mode="HTML", reply_markup=keyboard)
+            else:
+                await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+        except Exception as e:
+            logger.error(f"Error presenting deep movie results: {e}")
 
     elif data.startswith("movie_select:"):
         index = int(data.split(":")[1])
