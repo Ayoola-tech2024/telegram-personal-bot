@@ -75,7 +75,7 @@ def clean_markdown_to_html(text: str) -> str:
     text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
     return text
 
-MODELS_TO_TRY = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-8b', 'gemini-3.6-flash']
+MODELS_TO_TRY = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest']
 
 def call_gemini_api(contents) -> Optional[str]:
     """Execute Gemini generation with multi-model fallback and automatic API key rotation on 429 quota limits."""
@@ -241,7 +241,17 @@ def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
         if clean and len(clean) >= 2:
             return ("movie", clean)
 
-    # 3. SONG / MUSIC Intent
+    # 3. SHEET MUSIC / HYMN Intent (for classical pianists & church hymns)
+    if any(kw in lower for kw in ["sheet music", "sheet", "hymn", "piano score", "piano notes", "choral score", "satb"]):
+        if delimited:
+            return ("sheet", delimited)
+        clean = re.sub(r'^(?:can\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+|i\s+want\s+|download\s+|find\s+|get\s+|fetch\s+|play\s+|show\s+|search\s+for\s+)+', '', lower)
+        clean = re.sub(r'^(?:the\s+)?(?:sheet\s+music|sheet|hymn\s+score|hymn|piano\s+score|piano\s+notes|score)\s+(?:for|of|by)?\s*', '', clean)
+        clean = clean.strip(" '\"`\t\r\n:")
+        if clean and len(clean) >= 2:
+            return ("sheet", clean)
+
+    # 4. SONG / MUSIC Intent
     if any(kw in lower for kw in ["song", "music", "mp3", "audio", "track", "single", "album"]):
         if delimited:
             return ("song", delimited)
@@ -251,7 +261,7 @@ def fast_intent_check(text: str) -> Optional[tuple[str, str]]:
         if clean and len(clean) >= 2:
             return ("song", clean)
 
-    # 4. PDF / BOOK Intent
+    # 5. PDF / BOOK Intent
     if any(kw in lower for kw in ["pdf", "book", "ebook", "document", "filetype:pdf"]):
         if delimited:
             return ("pdf", delimited)
@@ -301,7 +311,8 @@ async def classify_user_input(text: str) -> tuple[str, str]:
     prompt = (
         f'Analyze the user message: "{text}".\n'
         f'Extract the user intent and clean title/query.\n'
-        f'Reply ONLY with a JSON object: {{"type": "movie"|"song"|"lyrics"|"both"|"chat", "query": "exact title or artist and title"}}.\n'
+        f'Reply ONLY with a JSON object: {{"type": "movie"|"song"|"lyrics"|"both"|"sheet"|"chat", "query": "exact title or artist and title"}}.\n'
+        f'Use "sheet" if the user wants sheet music, piano score, or a hymn arrangement. Example: {{"type": "sheet", "query": "Chopin Nocturne Op 9 No 2"}}\n'
         f'Use "both" if the user wants BOTH the song audio and lyrics. Example: {{"type": "both", "query": "Those Eyes by New West"}}'
     )
 
@@ -355,6 +366,13 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await run_lyrics_search(update, context, message_text)
         return
 
+    # Check if waiting for sheet music / hymn name after /sheet or /hymn command
+    if context.user_data.get('waiting_for_sheet'):
+        context.user_data.pop('waiting_for_sheet', None)
+        from modules.sheet_music import run_sheet_search
+        await run_sheet_search(update, context, message_text)
+        return
+
     # Send typing action immediately
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
@@ -378,6 +396,10 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         elif intent_type == "lyrics":
             from modules.global_search import run_lyrics_search
             await run_lyrics_search(update, context, query)
+            return
+        elif intent_type == "sheet":
+            from modules.sheet_music import run_sheet_search
+            await run_sheet_search(update, context, query)
             return
         elif intent_type == "image":
             context.args = query.split()
@@ -411,6 +433,10 @@ async def ai_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif intent_type == "lyrics":
         from modules.global_search import run_lyrics_search
         await run_lyrics_search(update, context, query)
+        return
+    elif intent_type == "sheet":
+        from modules.sheet_music import run_sheet_search
+        await run_sheet_search(update, context, query)
         return
     elif intent_type == "both":
         from modules.global_search import run_song_download, run_lyrics_search

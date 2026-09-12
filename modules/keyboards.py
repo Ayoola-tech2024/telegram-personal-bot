@@ -236,3 +236,53 @@ def playlist_download_keyboard(playlist_id: str, count: int) -> InlineKeyboardMa
         [InlineKeyboardButton("❌ Cancel", callback_data=f"playlist_dl:{playlist_id}:cancel")]
     ]
     return InlineKeyboardMarkup(buttons)
+
+
+def sheet_music_keyboard(session_id: str, scores: list[dict], page: int = 1, page_size: int = 5) -> InlineKeyboardMarkup:
+    """
+    Build a keyboard for selecting sheet music / hymn score to download as PDF.
+    """
+    total_items = len(scores)
+    total_pages = max(1, (total_items + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+
+    start_idx = (page - 1) * page_size
+    end_idx = min(start_idx + page_size, total_items)
+    page_scores = scores[start_idx:end_idx]
+
+    buttons = []
+    for rel_i, score in enumerate(page_scores):
+        actual_i = start_idx + rel_i
+        title = score.get("title", "Score")
+        source = score.get("source", "PDF")
+        
+        display = f"🎹 {title[:28]} [{source}]"
+        buttons.append([
+            InlineKeyboardButton(
+                text=display,
+                callback_data=f"sheet:{session_id}:{actual_i}",
+            )
+        ])
+
+    # Navigation row if multi-page
+    if total_pages > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"sheetpage:{session_id}:{page - 1}"))
+        else:
+            nav_row.append(InlineKeyboardButton("⏹️", callback_data="noop"))
+
+        nav_row.append(InlineKeyboardButton(f"📄 {page}/{total_pages}", callback_data="noop"))
+
+        if page < total_pages:
+            nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"sheetpage:{session_id}:{page + 1}"))
+        else:
+            nav_row.append(InlineKeyboardButton("⏹️", callback_data="noop"))
+        buttons.append(nav_row)
+
+    # Cancel button
+    buttons.append([
+        InlineKeyboardButton("❌ Cancel", callback_data=f"sheet:{session_id}:cancel")
+    ])
+
+    return InlineKeyboardMarkup(buttons)

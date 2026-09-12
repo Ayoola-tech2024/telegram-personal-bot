@@ -60,6 +60,11 @@ from modules.news_weather import (
     weather_command,
     news_command,
 )
+from modules.sheet_music import (
+    sheet_command,
+    sheet_callback,
+    sheet_page_callback,
+)
 
 
 HELP_TEXT = """
@@ -73,6 +78,12 @@ HELP_TEXT = """
 • Just type: <code>play sailor song</code> or <code>die with a smile</code>
 • Or use: <code>/song &lt;title&gt;</code> (multi-portal MP3 search & direct download)
 • Lyrics: <code>/lyrics &lt;song title&gt;</code>
+
+<b>🎹 Sheet Music & Hymns (Classical Pianist Suite):</b>
+• <code>/sheet &lt;piece&gt;</code> - Classical piano scores (Chopin, Bach, Beethoven, Debussy, etc.)
+• <code>/hymn &lt;title&gt;</code> - Church hymns, 4-part SATB harmonies, & lead sheets
+• Or just type: <code>sheet music for moonlight sonata</code> or <code>hymn great is thy faithfulness</code>
+• Ready-to-play PDF scores delivered directly into this chat!
 
 <b>📹 Universal Social Media Downloader:</b>
 • Paste any link from Instagram, TikTok, Twitter/X, YouTube, Reddit, Facebook
@@ -148,6 +159,7 @@ async def start_command(update: Update, context):
         "I am your all-in-one personal AI assistant & media powerhouse. Here is what I can do for you right away:\n\n"
         "🎬 <b>Find Movies & Series:</b> Type any title (e.g. <code>spiderman</code>) or <code>/movie &lt;title&gt;</code>\n"
         "🎵 <b>Download MP3 Songs:</b> Type a song name (e.g. <code>sailor song</code>) or <code>/song &lt;title&gt;</code>\n"
+        "🎹 <b>Piano Scores & Hymns:</b> Type <code>/sheet &lt;piece&gt;</code> or <code>/hymn &lt;title&gt;</code> for direct PDF scores\n"
         "📹 <b>Social Video Downloader:</b> Paste any Instagram Reel, TikTok, Shorts, or X link\n"
         "🎙️ <b>AI Voice Notes:</b> Send a voice message and I will transcribe and talk back\n"
         "🛠️ <b>File Converter:</b> Upload any photo, video, PDF, or Word document\n"
@@ -218,6 +230,8 @@ async def set_bot_commands(application: Application):
         BotCommand("image", "Search for images"),
         BotCommand("song", "Find a song"),
         BotCommand("lyrics", "Get song lyrics"),
+        BotCommand("sheet", "Piano sheet music & scores PDF"),
+        BotCommand("hymn", "Church hymns & SATB score PDF"),
         BotCommand("pdf", "Search for PDFs"),
         BotCommand("movie", "Search 14+ movie sites"),
         BotCommand("weather", "Live weather report"),
@@ -266,6 +280,8 @@ def main():
     app.add_handler(CommandHandler("image", image_search_command))
     app.add_handler(CommandHandler("song", song_search_command))
     app.add_handler(CommandHandler("lyrics", lyrics_search_command))
+    app.add_handler(CommandHandler("sheet", sheet_command))
+    app.add_handler(CommandHandler("hymn", sheet_command))
     app.add_handler(CommandHandler("pdf", pdf_search_command))
     app.add_handler(CommandHandler("movie", movie_command))
     app.add_handler(CommandHandler("weather", weather_command))
@@ -282,6 +298,8 @@ def main():
     app.add_handler(CallbackQueryHandler(movie_callback, pattern=r"^movie_"))
     app.add_handler(CallbackQueryHandler(movie_download_callback, pattern=r"^moviedl:"))
     app.add_handler(CallbackQueryHandler(converter_callback, pattern=r"^conv:"))
+    app.add_handler(CallbackQueryHandler(sheet_callback, pattern=r"^sheet:"))
+    app.add_handler(CallbackQueryHandler(sheet_page_callback, pattern=r"^sheetpage:"))
     app.add_handler(CallbackQueryHandler(song_lyrics_callback, pattern=r"^songlyrics:"))
     app.add_handler(CallbackQueryHandler(song_select_callback, pattern=r"^songselect:"))
     app.add_handler(CallbackQueryHandler(song_page_callback, pattern=r"^songpage:"))

@@ -37,7 +37,7 @@ def _get_gemini_client():
     client = genai.Client(api_key=key)
     return client
 
-FALLBACK_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-8b', 'gemini-3.6-flash']
+FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest']
 
 def generate_ai_content(prompt: str) -> Optional[str]:
     """Generates content using Gemini client with key rotation AND multi-model fallbacks on 429 quota exhaustion."""
