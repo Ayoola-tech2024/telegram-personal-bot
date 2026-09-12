@@ -162,14 +162,17 @@ async def converter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         await query.message.delete()
 
-        # Clean up files
+    except Exception as e:
+        logger.error(f"Error in converter_callback: {e}")
+        try:
+            await query.edit_message_text(f"❌ File conversion failed: {str(e)}")
+        except Exception:
+            pass
+    finally:
+        context.user_data.pop(session_key, None)
         for f_path in [local_in, local_out]:
             if f_path and os.path.exists(f_path):
                 try:
                     os.remove(f_path)
                 except Exception:
                     pass
-
-    except Exception as e:
-        logger.error(f"Error in converter_callback: {e}")
-        await query.edit_message_text(f"❌ File conversion failed: {str(e)}")

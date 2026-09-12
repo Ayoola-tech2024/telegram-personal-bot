@@ -794,6 +794,7 @@ async def movie_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         links = await scraper.get_download_links(movie['page_url'])
         context.user_data['movie_links'] = links
+        context.user_data[f"movie_links_{index}"] = links
 
         if not links:
             text = f"🎬 <b>{movie['title']}</b>\n\nDirect download page: <a href='{movie['page_url']}'>Click here to open page</a>"
@@ -824,12 +825,26 @@ async def movie_download_callback(update: Update, context: ContextTypes.DEFAULT_
             await query.edit_message_text("❌ Movie selection cancelled.")
         return
 
+    movie_id = parts[1] if len(parts) >= 2 else "0"
     try:
         index = int(parts[2]) if len(parts) >= 3 else 0
     except ValueError:
         index = 0
 
-    links = context.user_data.get('movie_links', [])
+    links = context.user_data.get(f"movie_links_{movie_id}") or context.user_data.get('movie_links', [])
+
+    if not links:
+        # Auto-recover by re-scraping the movie's page if results exist in memory
+        try:
+            m_idx = int(movie_id)
+            results = context.user_data.get('movie_results', [])
+            if results and m_idx < len(results):
+                movie = results[m_idx]
+                links = await scraper.get_download_links(movie['page_url'])
+                context.user_data[f"movie_links_{movie_id}"] = links
+                context.user_data['movie_links'] = links
+        except Exception as rec_err:
+            logger.warning(f"Auto-recovery for movie {movie_id} failed: {rec_err}")
 
     if not links or index >= len(links):
         await query.answer("Download link expired. Please search again.", show_alert=True)

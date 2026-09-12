@@ -75,6 +75,44 @@ def clean_markdown_to_html(text: str) -> str:
     text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
     return text
 
+MODELS_TO_TRY = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-8b', 'gemini-3.6-flash']
+
+def call_gemini_api(contents) -> Optional[str]:
+    """Execute Gemini generation with multi-model fallback and automatic API key rotation on 429 quota limits."""
+    global client
+    if not client:
+        client = _create_client()
+    if not client:
+        return None
+
+    attempts = 0
+    max_attempts = max(3, gemini_keys.key_count * 2)
+
+    while attempts < max_attempts:
+        for model_name in MODELS_TO_TRY:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=contents
+                )
+                if response and response.text:
+                    return response.text
+            except Exception as e:
+                err = str(e).lower()
+                if any(kw in err for kw in ['quota', '429', 'resource exhausted', 'rate limit', 'resource_exhausted']):
+                    logger.warning(f"Quota exceeded on model {model_name}. Rotating Gemini API key...")
+                    gemini_keys.rotate()
+                    client = _create_client()
+                    break
+                elif 'not found' in err or 'unsupported' in err:
+                    continue
+                else:
+                    logger.warning(f"Gemini error on {model_name}: {e}")
+                    continue
+        attempts += 1
+
+    return None
+
 async def ask_ai(user_id: int, message: str) -> str:
     global client
     if not client:
@@ -119,40 +157,15 @@ async def ask_ai(user_id: int, message: str) -> str:
     contents = [{"role": "user", "parts": [{"text": SYSTEM_PROMPT}]}]
     contents.extend(history)
 
-    try:
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=contents
-        )
-        reply_text = response.text or "I could not generate a response."
+    reply_text = call_gemini_api(contents)
+    if reply_text:
         reply_html = clean_markdown_to_html(reply_text)
-        
         history.append({"role": "model", "parts": [{"text": reply_html}]})
         return truncate_for_telegram(reply_html)
-
-    except Exception as e:
-        error_str = str(e).lower()
-        if any(kw in error_str for kw in ['quota', 'rate limit', '429', 'resource exhausted']):
-            logger.warning("Gemini quota hit, rotating API key...")
-            gemini_keys.rotate()
-            client = _create_client()
-            if client:
-                try:
-                    response = client.models.generate_content(
-                        model='gemini-3.6-flash',
-                        contents=contents
-                    )
-                    reply_text = response.text or "I could not generate a response."
-                    reply_html = clean_markdown_to_html(reply_text)
-                    history.append({"role": "model", "parts": [{"text": reply_html}]})
-                    return truncate_for_telegram(reply_html)
-                except Exception as retry_e:
-                    logger.error(f"Retry with new key failed: {retry_e}")
-
-        logger.error(f"Error calling Gemini: {e}")
+    else:
         if history and history[-1]["role"] == "user":
             history.pop()
-        return f"Error: {str(e)}"
+        return "⚠️ AI service is temporarily busy. Please try again in a few moments."
 
 async def summarize_url(url: str) -> str:
     global client
@@ -176,11 +189,10 @@ async def summarize_url(url: str) -> str:
         text = '\n'.join(chunk for chunk in chunks if chunk)[:4000]
 
         prompt = f"Summarize this article in 5 concise bullet points using HTML tags (<b>, <i>):\n\n{text}"
-        result = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt
-        )
-        return truncate_for_telegram(clean_markdown_to_html(result.text or "Could not generate summary."))
+        summary_text = call_gemini_api(prompt)
+        if summary_text:
+            return truncate_for_telegram(clean_markdown_to_html(summary_text))
+        return "Could not generate summary at this time."
     except Exception as e:
         logger.error(f"Error summarizing URL {url}: {e}")
         return f"Failed to summarize URL: {str(e)}"
@@ -294,11 +306,11 @@ async def classify_user_input(text: str) -> tuple[str, str]:
     )
 
     try:
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt
-        )
-        res_text = response.text.strip()
+        res_text = call_gemini_api(prompt)
+        if not res_text:
+            return ("chat", text)
+
+        res_text = res_text.strip()
         if res_text.startswith("```json"):
             res_text = res_text[7:]
         if res_text.startswith("```"):

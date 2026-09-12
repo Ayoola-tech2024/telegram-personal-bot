@@ -16,6 +16,7 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    ContextTypes,
     filters,
 )
 
@@ -62,37 +63,39 @@ from modules.news_weather import (
 
 
 HELP_TEXT = """
-<b>🤖 Ultimate AI Telegram Bot</b>
+🤖 <b>Damisile AI - Master Command Center</b>
 
-<b>🔍 Search & Info Commands:</b>
-/search &lt;query&gt; - Search the web with AI summary
-/image &lt;query&gt; - Search & send high-res images
-/song &lt;query&gt; - Find songs and audio files
-/lyrics &lt;song&gt; - Get song lyrics
-/pdf &lt;query&gt; - Search for PDF documents
-/movie &lt;title&gt; - Search movies across 14+ portals
-/weather &lt;city&gt; - Live weather report
-/news &lt;topic&gt; - Daily news digest
+<b>🎬 Movies & Series:</b>
+• Just type the title: <code>spiderman</code> or <code>the hunted</code>
+• Or use: <code>/movie &lt;title&gt;</code> (searches 14+ movie streaming portals)
 
-<b>📊 Live Telemetry & Dashboard:</b>
-/stats - View live public web analytics dashboard
+<b>🎵 Songs & Lyrics:</b>
+• Just type: <code>play sailor song</code> or <code>die with a smile</code>
+• Or use: <code>/song &lt;title&gt;</code> (multi-portal MP3 search & direct download)
+• Lyrics: <code>/lyrics &lt;song title&gt;</code>
 
-<b>🎬 Movies & Music:</b>
-Just type movie names (e.g. <code>spiderman</code>) or song names (e.g. <code>die with a smile</code>) directly!
-
-<b>📹 Zero-Click Social Media Download:</b>
-Paste any Instagram Reel, TikTok, Shorts, or X video link to get the video directly!
+<b>📹 Universal Social Media Downloader:</b>
+• Paste any link from Instagram, TikTok, Twitter/X, YouTube, Reddit, Facebook
+• Instant auto-download with direct video sent back!
 
 <b>🎙️ AI Voice Notes:</b>
-Send a voice note to transcribe and get a spoken AI response back!
+• Send or forward a voice note: transcribes your audio and replies back with a spoken voice note!
 
-<b>🛠️ File Converter Suite:</b>
-Send any image, video, DOCX, or PDF file to convert format or extract audio/text.
+<b>🛠️ File & Media Converter:</b>
+• Send any photo, video, PDF, or Word DOCX document to convert formats or extract audio/text.
 
-<b>🧠 AI Assistant:</b>
-/ask &lt;question&gt; - Ask AI anything
-/summarize &lt;url&gt; - Summarize any web page
-/clear - Clear AI chat history
+<b>🔍 Global Web & Document Search:</b>
+• <code>/search &lt;query&gt;</code> - Web search with AI synthesized summary
+• <code>/image &lt;query&gt;</code> - High-res photo gallery
+• <code>/pdf &lt;query&gt;</code> - Direct PDF book & document finder
+• <code>/weather &lt;city&gt;</code> - Live temperature & forecast
+• <code>/news &lt;topic&gt;</code> - Daily news digest
+
+<b>🧠 AI Chat & Tools:</b>
+• Just chat naturally or use: <code>/ask &lt;question&gt;</code>
+• <code>/summarize &lt;url&gt;</code> - Instant webpage summary
+• <code>/clear</code> - Reset AI conversation history
+• <code>/stats</code> - Live web analytics dashboard
 """
 
 PUBLIC_DASHBOARD_URL = "https://telegram-personal-bot-kzo4.onrender.com/"
@@ -136,17 +139,23 @@ def start_dashboard_server():
 async def start_command(update: Update, context):
     """Handle /start command."""
     user = update.effective_user
+    name = user.first_name if user and user.first_name else "friend"
     if user:
         log_activity(user.id, user.username, user.first_name, "command", "/start")
 
-    await update.message.reply_text(
-        "👋 <b>Welcome to your Ultimate AI Bot!</b>\n\n"
-        "I can download movies from 14+ portals, fetch MP3 songs, "
-        "auto-extract Instagram Reels & TikToks, transcribe voice notes, "
-        "convert files, report live weather, and answer anything with AI.\n\n"
-        "Type /help to see all commands!",
-        parse_mode="HTML",
+    welcome_text = (
+        f"👋 <b>Welcome, {name}!</b>\n\n"
+        "I am your all-in-one personal AI assistant & media powerhouse. Here is what I can do for you right away:\n\n"
+        "🎬 <b>Find Movies & Series:</b> Type any title (e.g. <code>spiderman</code>) or <code>/movie &lt;title&gt;</code>\n"
+        "🎵 <b>Download MP3 Songs:</b> Type a song name (e.g. <code>sailor song</code>) or <code>/song &lt;title&gt;</code>\n"
+        "📹 <b>Social Video Downloader:</b> Paste any Instagram Reel, TikTok, Shorts, or X link\n"
+        "🎙️ <b>AI Voice Notes:</b> Send a voice message and I will transcribe and talk back\n"
+        "🛠️ <b>File Converter:</b> Upload any photo, video, PDF, or Word document\n"
+        "🧠 <b>AI Assistant:</b> Chat with me anytime or use <code>/ask &lt;question&gt;</code>\n\n"
+        "💡 <i>Tip: Tap /help anytime to explore all commands and features!</i>"
     )
+
+    await update.message.reply_text(welcome_text, parse_mode="HTML")
 
 
 async def help_command(update: Update, context):

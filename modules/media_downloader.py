@@ -46,12 +46,7 @@ def _extract_formats_sync(url: str) -> dict:
         'no_warnings': True,
         'nocheckcertificate': True,
         'extract_flat': False,
-        'extractor_args': {
-            'youtube': ['player_client=ios,mweb,android,web']
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
-        }
+        'socket_timeout': 20,
     }
     
     with yt_dlp.YoutubeDL(options) as ydl:
@@ -104,12 +99,7 @@ def _download_media_sync(url: str, format_id: str = 'best', audio_only: bool = F
         'no_warnings': True,
         'nocheckcertificate': True,
         'outtmpl': filename_template,
-        'extractor_args': {
-            'youtube': ['player_client=ios,mweb,android,web']
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
-        }
+        'socket_timeout': 25,
     }
     
     if audio_only:
@@ -215,8 +205,9 @@ async def url_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         parse_mode="HTML"
                     )
                 await status_msg.delete()
+                file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
                 cleanup_file(filepath)
-                log_download(url, title="Social Video", file_type="video", file_size=os.path.getsize(filepath) if os.path.exists(filepath) else 0)
+                log_download(url, title="Social Video", file_type="video", file_size=file_size)
                 return
         except Exception as e:
             logger.error(f"Zero-click video auto-download failed for {url}: {e}")
@@ -229,16 +220,18 @@ async def url_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             info = await extract_formats(url)
             context.user_data[session_id] = {'url': url, 'info': info}
             
+            import html
+            safe_title = html.escape(info.get('title', 'Media Video'))
             duration_str = format_duration(info['duration'])
-            text = f"🎬 *{info['title']}*\n⏱ Duration: {duration_str}\n\nSelect quality:"
+            text = f"🎬 <b>{safe_title}</b>\n⏱ Duration: {duration_str}\n\n<i>Select quality to download:</i>"
             
             keyboard = quality_keyboard(session_id, info['formats'])
             
             if info['thumbnail']:
-                await message.reply_photo(photo=info['thumbnail'], caption=text, reply_markup=keyboard, parse_mode='Markdown')
+                await message.reply_photo(photo=info['thumbnail'], caption=text, reply_markup=keyboard, parse_mode='HTML')
                 await status_msg.delete()
             else:
-                await status_msg.edit_text(text, reply_markup=keyboard, parse_mode='Markdown')
+                await status_msg.edit_text(text, reply_markup=keyboard, parse_mode='HTML')
         except Exception as e:
             logger.error(f"Extraction error: {e}")
             await status_msg.edit_text(f"❌ Failed to extract info: {str(e)}")
@@ -304,6 +297,7 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Download error: {e}")
         await status_msg.edit_text(f"❌ Download failed: {str(e)}")
     finally:
+        context.user_data.pop(session_id, None)
         if filepath:
             cleanup_file(filepath)
 
@@ -319,6 +313,7 @@ async def direct_download_callback(update: Update, context: ContextTypes.DEFAULT
     action = data[2]
 
     if action == "cancel":
+        context.user_data.pop(session_id, None)
         await query.edit_message_text("❌ Direct download cancelled.")
         return
         
@@ -349,5 +344,6 @@ async def direct_download_callback(update: Update, context: ContextTypes.DEFAULT
         logger.error(f"Direct download error: {e}")
         await status_msg.edit_text(f"❌ Download failed: {str(e)}")
     finally:
+        context.user_data.pop(session_id, None)
         if filepath:
             cleanup_file(filepath)
