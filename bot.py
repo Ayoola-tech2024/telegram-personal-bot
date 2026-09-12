@@ -8,6 +8,7 @@ An all-in-one personal Telegram bot featuring:
 - AI-powered conversational assistant (Gemini)
 """
 
+import os
 import logging
 import threading
 from telegram import Update, BotCommand
