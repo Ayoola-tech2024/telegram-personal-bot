@@ -109,7 +109,7 @@ HELP_TEXT = """
 • <code>/stats</code> - Live web analytics dashboard
 """
 
-PUBLIC_DASHBOARD_URL = "https://telegram-personal-bot-kzo4.onrender.com/"
+PUBLIC_DASHBOARD_URL = os.getenv("RENDER_EXTERNAL_URL", "https://telegram-personal-bot-kzo4.onrender.com/")
 
 def self_ping_loop(port: int):
     """Periodically pings local and public web server every 9 minutes to prevent sleep/spindowns."""
@@ -122,9 +122,10 @@ def self_ping_loop(port: int):
         except Exception:
             pass
         try:
-            if PUBLIC_DASHBOARD_URL:
+            live_url = os.getenv("RENDER_EXTERNAL_URL") or PUBLIC_DASHBOARD_URL
+            if live_url:
                 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DamisileKeepAlive/1.0"}
-                httpx.get(f"{PUBLIC_DASHBOARD_URL.rstrip('/')}/api/stats", headers=headers, timeout=10.0)
+                httpx.get(f"{live_url.rstrip('/')}/api/stats", headers=headers, timeout=10.0)
         except Exception:
             pass
 
@@ -185,6 +186,7 @@ async def stats_command(update: Update, context):
         log_activity(user.id, user.username, user.first_name, "command", "/stats")
 
     stats = get_analytics_stats()
+    live_url = os.getenv("RENDER_EXTERNAL_URL") or PUBLIC_DASHBOARD_URL
     text = (
         f"📊 <b>Damisile AI - Live Usage & Intelligence Dashboard</b>\n\n"
         f"• <b>Total Bot Interactions:</b> {stats['total_logs']}\n"
@@ -192,7 +194,7 @@ async def stats_command(update: Update, context):
         f"• <b>AI & Web Searches:</b> {stats['total_searches']}\n"
         f"• <b>Active Authorized Users:</b> {len(stats['top_users'])}\n\n"
         f"🌐 <b>Live Public Web Dashboard (View Anywhere):</b>\n"
-        f"<a href='{PUBLIC_DASHBOARD_URL}'>{PUBLIC_DASHBOARD_URL}</a>"
+        f"<a href='{live_url}'>{live_url}</a>"
     )
     await update.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
 

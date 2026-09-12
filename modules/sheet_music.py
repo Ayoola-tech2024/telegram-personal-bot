@@ -73,8 +73,12 @@ async def verify_pdf_url(client: httpx.AsyncClient, url: str) -> Optional[int]:
     Checks if a candidate URL points to a valid PDF document.
     Returns file size in bytes if valid PDF (< 50MB), otherwise None.
     """
+    u_lower = url.lower()
+    if "imslp.org/wiki/" in u_lower or u_lower.endswith((".html", ".htm", ".asp", ".php")):
+        return None
+
     try:
-        resp = await client.head(url, timeout=5.0)
+        resp = await client.head(url, timeout=3.5)
         ct = resp.headers.get("content-type", "").lower()
         if "application/pdf" in ct or url.lower().endswith(".pdf"):
             cl = resp.headers.get("content-length")
@@ -86,7 +90,7 @@ async def verify_pdf_url(client: httpx.AsyncClient, url: str) -> Optional[int]:
 
     # Fast GET probe for servers that reject HEAD
     try:
-        resp = await client.get(url, headers={"Range": "bytes=0-1024"}, timeout=5.0)
+        resp = await client.get(url, headers={"Range": "bytes=0-1024"}, timeout=3.5)
         if resp.status_code in (200, 206):
             ct = resp.headers.get("content-type", "").lower()
             if "application/pdf" in ct or resp.content.startswith(b"%PDF"):
@@ -113,11 +117,15 @@ class SheetMusicEngine:
         if not clean_q:
             clean_q = query
 
-        is_hymn = any(w in query.lower() for w in ["hymn", "worship", "praise", "choir", "faithfulness", "abide", "grace", "rugged", "cross", "glory", "holy", "salvation"])
+        hymn_keywords = [
+            "hymn", "worship", "praise", "choir", "faithfulness", "abide", "grace",
+            "rugged", "cross", "glory", "holy", "salvation", "thee", "thou", "lord", "god", "hour", "savior"
+        ]
+        is_hymn = any(w in query.lower() for w in hymn_keywords)
         if is_hymn:
             queries = [
                 f"{clean_q} hymn PDF score download",
-                f"{clean_q} hymn sheet music piano SATB",
+                f"{clean_q} openhymnal OR hymnary score PDF",
             ]
         else:
             queries = [
@@ -128,7 +136,7 @@ class SheetMusicEngine:
         candidate_links = []
         seen_urls = set()
 
-        async with httpx.AsyncClient(timeout=10.0, headers=HEADERS, follow_redirects=True) as http_client:
+        async with httpx.AsyncClient(timeout=8.0, headers=HEADERS, follow_redirects=True) as http_client:
             for q in queries:
                 try:
                     resp = await http_client.post("https://html.duckduckgo.com/html/", data={"q": q})
@@ -149,43 +157,29 @@ class SheetMusicEngine:
                 if len(candidate_links) >= 10:
                     break
 
-            # Verify which candidates are live downloadable PDFs (<50MB)
-            verified_scores = []
-            for url, raw_title in candidate_links:
-                if len(verified_scores) >= max_results:
-                    break
-
-                # Filter for likely PDF links or score repositories
+            # Fast concurrent verification of candidate links (<50MB)
+            async def check_candidate(url: str, raw_title: str) -> Optional[dict]:
                 u_lower = url.lower()
-                is_promising = (
-                    u_lower.endswith(".pdf") or
-                    "/pdf" in u_lower or
-                    "openhymnal.org" in u_lower or
-                    "imslp" in u_lower or
-                    "mutopiaproject.org" in u_lower or
-                    "8notes.com" in u_lower or
-                    "free-scores.com" in u_lower or
-                    "hymnary.org" in u_lower or
-                    "timelesstruths.org" in u_lower or
-                    "greghowlett.com" in u_lower or
-                    "mollychurchmusic.com" in u_lower
-                )
-                if not is_promising:
-                    continue
-
+                if "imslp.org/wiki/" in u_lower or u_lower.endswith((".html", ".htm", ".asp", ".php")):
+                    return None
                 size = await verify_pdf_url(http_client, url)
                 if size:
                     source = detect_source_name(url)
                     clean_title = clean_score_title(raw_title)
-                    verified_scores.append({
+                    return {
                         "title": clean_title,
                         "source": source,
                         "url": url,
                         "size": size,
                         "score_type": "Hymn / Choral" if is_hymn or "openhymnal" in url.lower() else "Classical Piano"
-                    })
+                    }
+                return None
 
-        return verified_scores
+            tasks = [check_candidate(u, t) for u, t in candidate_links[:12]]
+            results = await asyncio.gather(*tasks)
+            verified_scores = [r for r in results if r]
+
+        return verified_scores[:max_results]
 
 
 @restricted
